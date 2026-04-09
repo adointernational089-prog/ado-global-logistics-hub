@@ -27,7 +27,7 @@ const Consignments = () => {
 
   const [form, setForm] = useState<Omit<Consignment, 'id'>>({
     date: '', consignmentNo: '', marka: '', totalCtns: 0, cbm: 0, gw: 0,
-    destination: 'TATOPANI', status: 'On the way to Lhasa', client: '', remarks: ''
+    destination: 'TATOPANI', status: '', client: '', remarks: ''
   });
 
   const filtered = useMemo(() =>
@@ -37,7 +37,7 @@ const Consignments = () => {
 
   const resetForm = () => setForm({
     date: '', consignmentNo: '', marka: '', totalCtns: 0, cbm: 0, gw: 0,
-    destination: 'TATOPANI', status: 'On the way to Lhasa', client: '', remarks: ''
+    destination: 'TATOPANI', status: '', client: '', remarks: ''
   });
 
   const syncToLoadingList = (c: Consignment) => {
@@ -45,11 +45,8 @@ const Consignments = () => {
     const prefix = c.consignmentNo.substring(0, 2).toUpperCase();
     const isYiwu = prefix === 'YA' || prefix === 'YW';
     const isGuangzhou = prefix === 'GA' || prefix === 'GW';
-
     if (!isYiwu && !isGuangzhou) return;
-
     const origin = isYiwu ? 'yiwu' as const : 'guangzhou' as const;
-
     if (existing) {
       updateLoadingListItem(existing.id, {
         date: c.date, marka: c.marka, totalCtns: c.totalCtns, cbm: c.cbm,
@@ -104,22 +101,15 @@ const Consignments = () => {
   const handleImport = () => {
     if (!importText.trim()) return;
     const lines = importText.trim().split('\n');
-    const headers = lines[0].split('\t');
     for (let i = 1; i < lines.length; i++) {
       const vals = lines[i].split('\t');
       if (vals.length < 2) continue;
       const newC: Consignment = {
-        id: genId(),
-        date: vals[0] || '',
-        consignmentNo: vals[1] || '',
-        marka: vals[2] || '',
-        totalCtns: Number(vals[3]) || 0,
-        cbm: Number(vals[4]) || 0,
-        gw: Number(vals[5]) || 0,
+        id: genId(), date: vals[0] || '', consignmentNo: vals[1] || '', marka: vals[2] || '',
+        totalCtns: Number(vals[3]) || 0, cbm: Number(vals[4]) || 0, gw: Number(vals[5]) || 0,
         destination: (vals[6] as Destination) || 'TATOPANI',
-        status: (vals[7] as ConsignmentStatus) || 'On the way to Lhasa',
-        client: vals[8] || '',
-        remarks: vals[9] || '',
+        status: (vals[7] as ConsignmentStatus) || '',
+        client: vals[8] || '', remarks: vals[9] || '',
       };
       addConsignment(newC);
       syncToLoadingList(newC);
@@ -142,10 +132,7 @@ const Consignments = () => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (ev) => {
-      const text = ev.target?.result as string;
-      setImportText(text);
-    };
+    reader.onload = (ev) => setImportText(ev.target?.result as string);
     reader.readAsText(file);
   };
 
@@ -204,7 +191,7 @@ const Consignments = () => {
                 <td className="p-3">{c.cbm}</td>
                 <td className="p-3">{c.gw}</td>
                 <td className="p-3">{c.destination}</td>
-                <td className="p-3"><Badge variant="outline">{c.status}</Badge></td>
+                <td className="p-3">{c.status ? <Badge variant="outline">{c.status}</Badge> : <span className="text-muted-foreground">—</span>}</td>
                 <td className="p-3">{c.client}</td>
                 <td className="p-3">{c.remarks}</td>
                 <td className="p-3 sticky-col-right flex gap-1">
@@ -241,9 +228,12 @@ const Consignments = () => {
             </div>
             <div>
               <label className="text-xs font-semibold">Status</label>
-              <Select value={form.status} onValueChange={v => setForm({ ...form, status: v as ConsignmentStatus })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+              <Select value={form.status || '_none'} onValueChange={v => setForm({ ...form, status: v === '_none' ? '' as any : v as ConsignmentStatus })}>
+                <SelectTrigger><SelectValue placeholder="Select status" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">— Select —</SelectItem>
+                  {STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                </SelectContent>
               </Select>
             </div>
             <div><label className="text-xs font-semibold">Client</label><Input value={form.client} onChange={e => setForm({ ...form, client: e.target.value })} /></div>
@@ -253,30 +243,81 @@ const Consignments = () => {
         </DialogContent>
       </Dialog>
 
-      {/* View Dialog */}
+      {/* View Dialog - Attractive */}
       <Dialog open={!!showView} onOpenChange={() => setShowView(null)}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Consignment Details</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle className="text-lg">Consignment Details</DialogTitle></DialogHeader>
           {viewedC && (
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div><span className="font-semibold">Date:</span> {viewedC.date}</div>
-              <div><span className="font-semibold">Consignment No:</span> {viewedC.consignmentNo}</div>
-              <div><span className="font-semibold">MARKA:</span> {viewedC.marka}</div>
-              <div><span className="font-semibold">Total CTNS:</span> {viewedC.totalCtns}</div>
-              <div><span className="font-semibold">CBM:</span> {viewedC.cbm}</div>
-              <div><span className="font-semibold">GW:</span> {viewedC.gw}</div>
-              <div><span className="font-semibold">Destination:</span> {viewedC.destination}</div>
-              <div><span className="font-semibold">Status:</span> {viewedC.status}</div>
-              <div><span className="font-semibold">Client:</span> {viewedC.client}</div>
-              <div className="col-span-2"><span className="font-semibold">Remarks:</span> {viewedC.remarks}</div>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3 rounded-lg bg-accent/10 border border-accent/20">
+                  <span className="text-xs text-muted-foreground">Consignment No.</span>
+                  <p className="font-bold text-lg">{viewedC.consignmentNo}</p>
+                </div>
+                <div className="p-3 rounded-lg bg-accent/10 border border-accent/20">
+                  <span className="text-xs text-muted-foreground">MARKA</span>
+                  <p className="font-bold text-lg">{viewedC.marka}</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="p-3 rounded-lg bg-[hsl(var(--highlight))] text-[hsl(var(--highlight-foreground))]">
+                  <span className="text-xs opacity-70">Total CTNS</span>
+                  <p className="font-bold text-xl">{viewedC.totalCtns}</p>
+                </div>
+                <div className="p-3 rounded-lg bg-accent/10 border">
+                  <span className="text-xs text-muted-foreground">Client</span>
+                  <p className="font-bold">{viewedC.client}</p>
+                </div>
+                <div className="p-3 rounded-lg bg-accent/10 border">
+                  <span className="text-xs text-muted-foreground">Status</span>
+                  <p className="font-semibold">{viewedC.status || '—'}</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                <div><span className="text-muted-foreground text-xs block">Date</span><span className="font-medium">{viewedC.date}</span></div>
+                <div><span className="text-muted-foreground text-xs block">CBM</span><span className="font-medium">{viewedC.cbm}</span></div>
+                <div><span className="text-muted-foreground text-xs block">GW</span><span className="font-medium">{viewedC.gw}</span></div>
+                <div><span className="text-muted-foreground text-xs block">Destination</span><span className="font-medium">{viewedC.destination}</span></div>
+              </div>
+              {viewedC.remarks && (
+                <div className="text-sm"><span className="text-muted-foreground text-xs block">Remarks</span><span>{viewedC.remarks}</span></div>
+              )}
               {viewedL && (
-                <>
-                  <div className="col-span-2 border-t pt-3 mt-2"><h3 className="font-bold">Loading List Details</h3></div>
-                  <div><span className="font-semibold">LOT No:</span> {viewedL.lotNo}</div>
-                  <div><span className="font-semibold">Container:</span> {viewedL.container}</div>
-                  <div><span className="font-semibold">Dispatched From:</span> {viewedL.dispatchedFrom}</div>
-                  <div><span className="font-semibold">Arrival at Nylam:</span> {viewedL.arrivalDateNylam}</div>
-                </>
+                <div className="border-t pt-4 space-y-3">
+                  <h3 className="font-bold text-base">Loading List Details</h3>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                    <div><span className="text-muted-foreground text-xs block">LOT No.</span><span className="font-medium">{viewedL.lotNo || '—'}</span></div>
+                    <div><span className="text-muted-foreground text-xs block">Container</span><span className="font-medium">{viewedL.container || '—'}</span></div>
+                    <div><span className="text-muted-foreground text-xs block">Dispatched From</span><span className="font-medium">{viewedL.dispatchedFrom || '—'}</span></div>
+                    <div><span className="text-muted-foreground text-xs block">Arrival at Nylam</span><span className="font-medium">{viewedL.arrivalDateNylam || '—'}</span></div>
+                  </div>
+                  {(viewedL.kerung.dispatchedFromNylam || viewedL.kerung.loadedCtn > 0) && (
+                    <div className="border-t pt-2">
+                      <h4 className="font-semibold text-sm mb-1">KERUNG</h4>
+                      <div className="grid grid-cols-3 gap-2 text-xs">
+                        <div><span className="text-muted-foreground">Dispatched</span><p>{viewedL.kerung.dispatchedFromNylam}</p></div>
+                        <div><span className="text-muted-foreground">Loaded CTN</span><p>{viewedL.kerung.loadedCtn}</p></div>
+                        <div><span className="text-muted-foreground">Container</span><p>{viewedL.kerung.nylamContainer}</p></div>
+                        <div><span className="text-muted-foreground">Status</span><p>{viewedL.kerung.status || '—'}</p></div>
+                        <div><span className="text-muted-foreground">Received CTN</span><p>{viewedL.kerung.receivedCtn}</p></div>
+                        <div><span className="text-muted-foreground">Arrival</span><p>{viewedL.kerung.arrivalDate || '—'}</p></div>
+                      </div>
+                    </div>
+                  )}
+                  {(viewedL.tatopani.dispatchedFromNylam || viewedL.tatopani.loadedCtn > 0) && (
+                    <div className="border-t pt-2">
+                      <h4 className="font-semibold text-sm mb-1">TATOPANI</h4>
+                      <div className="grid grid-cols-3 gap-2 text-xs">
+                        <div><span className="text-muted-foreground">Dispatched</span><p>{viewedL.tatopani.dispatchedFromNylam}</p></div>
+                        <div><span className="text-muted-foreground">Loaded CTN</span><p>{viewedL.tatopani.loadedCtn}</p></div>
+                        <div><span className="text-muted-foreground">Container</span><p>{viewedL.tatopani.nylamContainer}</p></div>
+                        <div><span className="text-muted-foreground">Status</span><p>{viewedL.tatopani.status || '—'}</p></div>
+                        <div><span className="text-muted-foreground">Received CTN</span><p>{viewedL.tatopani.receivedCtn}</p></div>
+                        <div><span className="text-muted-foreground">Arrival</span><p>{viewedL.tatopani.arrivalDate || '—'}</p></div>
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           )}
