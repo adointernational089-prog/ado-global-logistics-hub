@@ -22,7 +22,7 @@ export interface Consignment {
   cbm: number;
   gw: number;
   destination: Destination;
-  status: ConsignmentStatus;
+  status: ConsignmentStatus | '';
   client: string;
   remarks: string;
 }
@@ -57,7 +57,7 @@ export interface LoadingListItem {
   lotNo: string;
   dispatchedFrom: string;
   container: string;
-  status: ConsignmentStatus;
+  status: ConsignmentStatus | '';
   arrivalDateNylam: string;
   kerung: KerungDetails;
   tatopani: TatopaniDetails;
