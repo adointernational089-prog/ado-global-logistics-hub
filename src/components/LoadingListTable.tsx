@@ -31,6 +31,10 @@ export const LoadingListTable = ({ origin }: Props) => {
   const [showImport, setShowImport] = useState(false);
   const [importText, setImportText] = useState('');
 
+  // Container count for expandable rows
+  const [kerungContainerCount, setKerungContainerCount] = useState<Record<string, number>>({});
+  const [tatopaniContainerCount, setTatopaniContainerCount] = useState<Record<string, number>>({});
+
   const label = origin === 'guangzhou' ? 'Guangzhou' : 'Yiwu';
   const items = useMemo(() => loadingList.filter(l => l.origin === origin), [loadingList, origin]);
   const filtered = useMemo(() => items.filter(i =>
@@ -40,7 +44,7 @@ export const LoadingListTable = ({ origin }: Props) => {
   const [form, setForm] = useState<Omit<LoadingListItem, 'id'>>({
     date: '', consignmentNo: '', marka: '', totalCtns: 0, cbm: 0, gw: 0,
     destination: 'TATOPANI', lotNo: '', dispatchedFrom: '', container: '',
-    status: 'On the way to Lhasa', arrivalDateNylam: '',
+    status: '', arrivalDateNylam: '',
     kerung: emptyKerung(), tatopani: emptyTatopani(),
     client: '', remarks: '', followUp: false, origin,
   });
@@ -52,7 +56,7 @@ export const LoadingListTable = ({ origin }: Props) => {
   const resetForm = () => setForm({
     date: '', consignmentNo: '', marka: '', totalCtns: 0, cbm: 0, gw: 0,
     destination: 'TATOPANI', lotNo: '', dispatchedFrom: '', container: '',
-    status: 'On the way to Lhasa', arrivalDateNylam: '',
+    status: '', arrivalDateNylam: '',
     kerung: emptyKerung(), tatopani: emptyTatopani(),
     client: '', remarks: '', followUp: false, origin,
   });
@@ -72,6 +76,8 @@ export const LoadingListTable = ({ origin }: Props) => {
   };
 
   const calcRemaining = (item: LoadingListItem) => {
+    // Only fill if loaded CTN from Nylam to Kerung or Tatopani is filled
+    if (item.tatopani.loadedCtn === 0 && item.kerung.loadedCtn === 0) return '-';
     return item.totalCtns - item.tatopani.loadedCtn - item.kerung.loadedCtn;
   };
 
@@ -191,7 +197,7 @@ export const LoadingListTable = ({ origin }: Props) => {
         totalCtns: Number(vals[3]) || 0, cbm: Number(vals[4]) || 0, gw: Number(vals[5]) || 0,
         destination: (vals[6] as Destination) || 'TATOPANI', lotNo: vals[7] || '',
         dispatchedFrom: vals[8] || '', container: vals[9] || '',
-        status: (vals[10] as ConsignmentStatus) || 'On the way to Lhasa',
+        status: (vals[10] as ConsignmentStatus) || '',
         arrivalDateNylam: '', kerung: emptyKerung(), tatopani: emptyTatopani(),
         client: vals[11] || '', remarks: vals[12] || '', followUp: false, origin,
       };
@@ -211,11 +217,79 @@ export const LoadingListTable = ({ origin }: Props) => {
   };
 
   const viewedItem = showView ? items.find(i => i.id === showView) : null;
-
   const toggleSelect = (id: string) => setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
 
-  const handleInlineEdit = (id: string, field: string, value: any) => {
-    updateLoadingListItem(id, { [field]: value } as any);
+  const getContainerCount = (id: string, type: 'kerung' | 'tatopani') => {
+    const map = type === 'kerung' ? kerungContainerCount : tatopaniContainerCount;
+    return map[id] || 1;
+  };
+
+  const setContainerCount = (id: string, type: 'kerung' | 'tatopani', count: number) => {
+    if (type === 'kerung') setKerungContainerCount(prev => ({ ...prev, [id]: count }));
+    else setTatopaniContainerCount(prev => ({ ...prev, [id]: count }));
+  };
+
+  const renderExpandableFields = (item: LoadingListItem, type: 'kerung' | 'tatopani') => {
+    const details = item[type];
+    const count = getContainerCount(item.id, type);
+    const statuses = type === 'kerung' ? KERUNG_STATUSES : TATOPANI_STATUSES;
+    const typeLabel = type === 'kerung' ? 'Kerung' : 'Tatopani';
+
+    return (
+      <tr className="bg-accent/5">
+        <td colSpan={22} className="p-3">
+          <div className="mb-2 flex items-center gap-2">
+            <label className="text-xs font-semibold">Containers:</label>
+            <Input
+              className="h-7 w-16 text-xs"
+              type="number"
+              min={1}
+              value={count}
+              onChange={e => setContainerCount(item.id, type, Math.max(1, Number(e.target.value)))}
+            />
+          </div>
+          {Array.from({ length: count }).map((_, rowIdx) => (
+            <div key={rowIdx} className="grid grid-cols-3 md:grid-cols-6 gap-2 text-xs mb-2 p-2 border rounded bg-background">
+              {rowIdx === 0 ? (
+                <>
+                  <div><label className="font-semibold block text-[10px]">Dispatched from Nylam</label><Input className="h-7 text-xs" value={details.dispatchedFromNylam} onChange={e => updateLoadingListItem(item.id, { [type]: { ...details, dispatchedFromNylam: e.target.value } })} /></div>
+                  <div><label className="font-semibold block text-[10px]">Loaded CTN</label><Input className="h-7 text-xs" type="number" value={details.loadedCtn} onChange={e => updateLoadingListItem(item.id, { [type]: { ...details, loadedCtn: Number(e.target.value) } })} /></div>
+                  <div><label className="font-semibold block text-[10px]">Nylam Container</label><Input className="h-7 text-xs" value={details.nylamContainer} onChange={e => updateLoadingListItem(item.id, { [type]: { ...details, nylamContainer: e.target.value } })} /></div>
+                  <div><label className="font-semibold block text-[10px]">Status</label>
+                    <Select value={details.status || '_none'} onValueChange={v => updateLoadingListItem(item.id, { [type]: { ...details, status: v === '_none' ? '' : v } })}>
+                      <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="Status" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="_none">— Select —</SelectItem>
+                        {statuses.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div><label className="font-semibold block text-[10px]">Received CTN</label><Input className="h-7 text-xs" type="number" value={details.receivedCtn} onChange={e => updateLoadingListItem(item.id, { [type]: { ...details, receivedCtn: Number(e.target.value) } })} /></div>
+                  <div><label className="font-semibold block text-[10px]">Arrival Date</label><Input className="h-7 text-xs" type="date" value={details.arrivalDate} onChange={e => updateLoadingListItem(item.id, { [type]: { ...details, arrivalDate: e.target.value } })} /></div>
+                </>
+              ) : (
+                <>
+                  <div><label className="font-semibold block text-[10px]">Dispatched (Row {rowIdx + 1})</label><Input className="h-7 text-xs" placeholder="—" /></div>
+                  <div><label className="font-semibold block text-[10px]">Loaded CTN</label><Input className="h-7 text-xs" type="number" placeholder="0" /></div>
+                  <div><label className="font-semibold block text-[10px]">Container</label><Input className="h-7 text-xs" placeholder="—" /></div>
+                  <div><label className="font-semibold block text-[10px]">Status</label>
+                    <Select defaultValue="_none">
+                      <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="Status" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="_none">— Select —</SelectItem>
+                        {statuses.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div><label className="font-semibold block text-[10px]">Received CTN</label><Input className="h-7 text-xs" type="number" placeholder="0" /></div>
+                  <div><label className="font-semibold block text-[10px]">Arrival Date</label><Input className="h-7 text-xs" type="date" /></div>
+                </>
+              )}
+            </div>
+          ))}
+        </td>
+      </tr>
+    );
   };
 
   return (
@@ -258,7 +332,7 @@ export const LoadingListTable = ({ origin }: Props) => {
               <th className="p-2 text-left font-semibold cursor-pointer">TATOPANI ▼</th>
               <th className="p-2 text-left font-semibold highlight-cell">On the Way</th>
               <th className="p-2 text-left font-semibold highlight-cell">Missing CTN</th>
-              <th className="p-2 text-left font-semibold highlight-cell">Remaining CTN</th>
+              <th className="p-2 text-left font-semibold highlight-cell">Remaining CTN at Nylam</th>
               <th className="p-2 text-left font-semibold">Client</th>
               <th className="p-2 text-left font-semibold">Remarks</th>
               <th className="p-2 text-left font-semibold">Follow Up</th>
@@ -283,7 +357,7 @@ export const LoadingListTable = ({ origin }: Props) => {
                     <td className="p-2">{item.lotNo}</td>
                     <td className="p-2">{item.dispatchedFrom}</td>
                     <td className="p-2">{item.container}</td>
-                    <td className="p-2"><Badge variant="outline" className="text-xs">{item.status}</Badge></td>
+                    <td className="p-2">{item.status ? <Badge variant="outline" className="text-xs">{item.status}</Badge> : <span className="text-muted-foreground">—</span>}</td>
                     <td className="p-2">{item.arrivalDateNylam}</td>
                     <td className="p-2">
                       <Button size="sm" variant="ghost" className="h-6 px-1 text-xs" onClick={() => setExpandedKerung(prev => prev.includes(item.id) ? prev.filter(x => x !== item.id) : [...prev, item.id])}>
@@ -313,44 +387,8 @@ export const LoadingListTable = ({ origin }: Props) => {
                       <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => deleteLoadingListItem(item.id)}><Trash2 className="h-3 w-3 text-destructive" /></Button>
                     </td>
                   </tr>
-                  {isKerungExpanded && (
-                    <tr key={`${item.id}-kerung`} className="bg-accent/10">
-                      <td colSpan={22} className="p-3">
-                        <div className="grid grid-cols-6 gap-2 text-xs">
-                          <div><label className="font-semibold block">Dispatched from Nylam</label><Input className="h-7 text-xs" value={item.kerung.dispatchedFromNylam} onChange={e => updateLoadingListItem(item.id, { kerung: { ...item.kerung, dispatchedFromNylam: e.target.value } })} /></div>
-                          <div><label className="font-semibold block">Loaded CTN</label><Input className="h-7 text-xs" type="number" value={item.kerung.loadedCtn} onChange={e => updateLoadingListItem(item.id, { kerung: { ...item.kerung, loadedCtn: Number(e.target.value) } })} /></div>
-                          <div><label className="font-semibold block">Nylam Container</label><Input className="h-7 text-xs" value={item.kerung.nylamContainer} onChange={e => updateLoadingListItem(item.id, { kerung: { ...item.kerung, nylamContainer: e.target.value } })} /></div>
-                          <div><label className="font-semibold block">Status</label>
-                            <Select value={item.kerung.status} onValueChange={v => updateLoadingListItem(item.id, { kerung: { ...item.kerung, status: v as any } })}>
-                              <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="Status" /></SelectTrigger>
-                              <SelectContent>{KERUNG_STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
-                            </Select>
-                          </div>
-                          <div><label className="font-semibold block">Received CTN</label><Input className="h-7 text-xs" type="number" value={item.kerung.receivedCtn} onChange={e => updateLoadingListItem(item.id, { kerung: { ...item.kerung, receivedCtn: Number(e.target.value) } })} /></div>
-                          <div><label className="font-semibold block">Arrival Date</label><Input className="h-7 text-xs" type="date" value={item.kerung.arrivalDate} onChange={e => updateLoadingListItem(item.id, { kerung: { ...item.kerung, arrivalDate: e.target.value } })} /></div>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                  {isTatopaniExpanded && (
-                    <tr key={`${item.id}-tatopani`} className="bg-accent/10">
-                      <td colSpan={22} className="p-3">
-                        <div className="grid grid-cols-6 gap-2 text-xs">
-                          <div><label className="font-semibold block">Dispatched from Nylam</label><Input className="h-7 text-xs" value={item.tatopani.dispatchedFromNylam} onChange={e => updateLoadingListItem(item.id, { tatopani: { ...item.tatopani, dispatchedFromNylam: e.target.value } })} /></div>
-                          <div><label className="font-semibold block">Loaded CTN</label><Input className="h-7 text-xs" type="number" value={item.tatopani.loadedCtn} onChange={e => updateLoadingListItem(item.id, { tatopani: { ...item.tatopani, loadedCtn: Number(e.target.value) } })} /></div>
-                          <div><label className="font-semibold block">Nylam Container</label><Input className="h-7 text-xs" value={item.tatopani.nylamContainer} onChange={e => updateLoadingListItem(item.id, { tatopani: { ...item.tatopani, nylamContainer: e.target.value } })} /></div>
-                          <div><label className="font-semibold block">Status</label>
-                            <Select value={item.tatopani.status} onValueChange={v => updateLoadingListItem(item.id, { tatopani: { ...item.tatopani, status: v as any } })}>
-                              <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="Status" /></SelectTrigger>
-                              <SelectContent>{TATOPANI_STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
-                            </Select>
-                          </div>
-                          <div><label className="font-semibold block">Received CTN</label><Input className="h-7 text-xs" type="number" value={item.tatopani.receivedCtn} onChange={e => updateLoadingListItem(item.id, { tatopani: { ...item.tatopani, receivedCtn: Number(e.target.value) } })} /></div>
-                          <div><label className="font-semibold block">Arrival Date</label><Input className="h-7 text-xs" type="date" value={item.tatopani.arrivalDate} onChange={e => updateLoadingListItem(item.id, { tatopani: { ...item.tatopani, arrivalDate: e.target.value } })} /></div>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
+                  {isKerungExpanded && renderExpandableFields(item, 'kerung')}
+                  {isTatopaniExpanded && renderExpandableFields(item, 'tatopani')}
                 </>
               );
             })}
@@ -379,7 +417,7 @@ export const LoadingListTable = ({ origin }: Props) => {
             <div><label className="text-xs font-semibold">Dispatched from {label}</label><Input value={form.dispatchedFrom} onChange={e => setForm({ ...form, dispatchedFrom: e.target.value })} /></div>
             <div><label className="text-xs font-semibold">{label} Container</label><Input value={form.container} onChange={e => setForm({ ...form, container: e.target.value })} /></div>
             <div><label className="text-xs font-semibold">Status</label>
-              <Select value={form.status} onValueChange={v => setForm({ ...form, status: v as ConsignmentStatus })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent></Select>
+              <Select value={form.status || '_none'} onValueChange={v => setForm({ ...form, status: v === '_none' ? '' as any : v as ConsignmentStatus })}><SelectTrigger><SelectValue placeholder="Select status" /></SelectTrigger><SelectContent><SelectItem value="_none">— Select —</SelectItem>{STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent></Select>
             </div>
             <div><label className="text-xs font-semibold">Client</label><Input value={form.client} onChange={e => setForm({ ...form, client: e.target.value })} /></div>
             <div className="col-span-3"><label className="text-xs font-semibold">Remarks</label><Input value={form.remarks} onChange={e => setForm({ ...form, remarks: e.target.value })} /></div>
@@ -388,46 +426,81 @@ export const LoadingListTable = ({ origin }: Props) => {
         </DialogContent>
       </Dialog>
 
-      {/* View Dialog */}
+      {/* View Dialog - Attractive */}
       <Dialog open={!!showView} onOpenChange={() => setShowView(null)}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Loading List Details</DialogTitle></DialogHeader>
           {viewedItem && (
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div><span className="font-semibold">Date:</span> {viewedItem.date}</div>
-              <div><span className="font-semibold">Consignment No:</span> {viewedItem.consignmentNo}</div>
-              <div><span className="font-semibold">MARKA:</span> {viewedItem.marka}</div>
-              <div><span className="font-semibold">Total CTNS:</span> {viewedItem.totalCtns}</div>
-              <div><span className="font-semibold">CBM:</span> {viewedItem.cbm}</div>
-              <div><span className="font-semibold">GW:</span> {viewedItem.gw}</div>
-              <div><span className="font-semibold">Destination:</span> {viewedItem.destination}</div>
-              <div><span className="font-semibold">LOT No:</span> {viewedItem.lotNo}</div>
-              <div><span className="font-semibold">Dispatched from {label}:</span> {viewedItem.dispatchedFrom}</div>
-              <div><span className="font-semibold">{label} Container:</span> {viewedItem.container}</div>
-              <div><span className="font-semibold">Status:</span> {viewedItem.status}</div>
-              <div><span className="font-semibold">Arrival at Nylam:</span> {viewedItem.arrivalDateNylam}</div>
-              <div className="col-span-2 border-t pt-2 mt-2"><h3 className="font-bold">KERUNG</h3></div>
-              <div><span className="font-semibold">Dispatched:</span> {viewedItem.kerung.dispatchedFromNylam}</div>
-              <div><span className="font-semibold">Loaded CTN:</span> {viewedItem.kerung.loadedCtn}</div>
-              <div><span className="font-semibold">Container:</span> {viewedItem.kerung.nylamContainer}</div>
-              <div><span className="font-semibold">Status:</span> {viewedItem.kerung.status}</div>
-              <div><span className="font-semibold">Received CTN:</span> {viewedItem.kerung.receivedCtn}</div>
-              <div><span className="font-semibold">Arrival:</span> {viewedItem.kerung.arrivalDate}</div>
-              <div className="col-span-2 border-t pt-2 mt-2"><h3 className="font-bold">TATOPANI</h3></div>
-              <div><span className="font-semibold">Dispatched:</span> {viewedItem.tatopani.dispatchedFromNylam}</div>
-              <div><span className="font-semibold">Loaded CTN:</span> {viewedItem.tatopani.loadedCtn}</div>
-              <div><span className="font-semibold">Container:</span> {viewedItem.tatopani.nylamContainer}</div>
-              <div><span className="font-semibold">Status:</span> {viewedItem.tatopani.status}</div>
-              <div><span className="font-semibold">Received CTN:</span> {viewedItem.tatopani.receivedCtn}</div>
-              <div><span className="font-semibold">Arrival:</span> {viewedItem.tatopani.arrivalDate}</div>
-              <div className="col-span-2 border-t pt-2 mt-2">
-                <div><span className="font-semibold">On the Way:</span> {calcOnTheWay(viewedItem)}</div>
-                <div><span className="font-semibold">Missing CTN:</span> {calcMissing(viewedItem)}</div>
-                <div><span className="font-semibold">Remaining CTN at Nylam:</span> {calcRemaining(viewedItem)}</div>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3 rounded-lg bg-accent/10 border border-accent/20">
+                  <span className="text-xs text-muted-foreground">Consignment No.</span>
+                  <p className="font-bold text-lg">{viewedItem.consignmentNo}</p>
+                </div>
+                <div className="p-3 rounded-lg bg-accent/10 border border-accent/20">
+                  <span className="text-xs text-muted-foreground">MARKA</span>
+                  <p className="font-bold text-lg">{viewedItem.marka}</p>
+                </div>
               </div>
-              <div><span className="font-semibold">Client:</span> {viewedItem.client}</div>
-              <div><span className="font-semibold">Follow Up:</span> {viewedItem.followUp ? '✓' : '—'}</div>
-              <div className="col-span-2"><span className="font-semibold">Remarks:</span> {viewedItem.remarks}</div>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="p-3 rounded-lg bg-[hsl(var(--highlight))] text-[hsl(var(--highlight-foreground))]">
+                  <span className="text-xs opacity-70">Total CTNS</span>
+                  <p className="font-bold text-xl">{viewedItem.totalCtns}</p>
+                </div>
+                <div className="p-3 rounded-lg bg-accent/10 border">
+                  <span className="text-xs text-muted-foreground">Client</span>
+                  <p className="font-bold">{viewedItem.client}</p>
+                </div>
+                <div className="p-3 rounded-lg bg-accent/10 border">
+                  <span className="text-xs text-muted-foreground">Status</span>
+                  <p className="font-semibold">{viewedItem.status || '—'}</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                <div><span className="text-muted-foreground text-xs block">Date</span><span className="font-medium">{viewedItem.date}</span></div>
+                <div><span className="text-muted-foreground text-xs block">CBM</span><span className="font-medium">{viewedItem.cbm}</span></div>
+                <div><span className="text-muted-foreground text-xs block">GW</span><span className="font-medium">{viewedItem.gw}</span></div>
+                <div><span className="text-muted-foreground text-xs block">Destination</span><span className="font-medium">{viewedItem.destination}</span></div>
+                <div><span className="text-muted-foreground text-xs block">LOT No.</span><span className="font-medium">{viewedItem.lotNo || '—'}</span></div>
+                <div><span className="text-muted-foreground text-xs block">Dispatched from {label}</span><span className="font-medium">{viewedItem.dispatchedFrom || '—'}</span></div>
+                <div><span className="text-muted-foreground text-xs block">{label} Container</span><span className="font-medium">{viewedItem.container || '—'}</span></div>
+                <div><span className="text-muted-foreground text-xs block">Arrival at Nylam</span><span className="font-medium">{viewedItem.arrivalDateNylam || '—'}</span></div>
+              </div>
+              <div className="border-t pt-3 grid grid-cols-3 gap-3">
+                <div className="p-2 rounded bg-accent/10 text-center"><span className="text-xs text-muted-foreground block">On the Way</span><span className="font-bold">{calcOnTheWay(viewedItem) || '-'}</span></div>
+                <div className="p-2 rounded bg-destructive/10 text-center"><span className="text-xs text-muted-foreground block">Missing CTN</span><span className="font-bold">{calcMissing(viewedItem) || '-'}</span></div>
+                <div className="p-2 rounded bg-[hsl(var(--highlight))] text-center"><span className="text-xs opacity-70 block">Remaining at Nylam</span><span className="font-bold">{calcRemaining(viewedItem)}</span></div>
+              </div>
+              {(viewedItem.kerung.dispatchedFromNylam || viewedItem.kerung.loadedCtn > 0) && (
+                <div className="border-t pt-2">
+                  <h4 className="font-bold text-sm mb-2">KERUNG</h4>
+                  <div className="grid grid-cols-3 gap-2 text-xs">
+                    <div><span className="text-muted-foreground">Dispatched</span><p className="font-medium">{viewedItem.kerung.dispatchedFromNylam}</p></div>
+                    <div><span className="text-muted-foreground">Loaded CTN</span><p className="font-medium">{viewedItem.kerung.loadedCtn}</p></div>
+                    <div><span className="text-muted-foreground">Container</span><p className="font-medium">{viewedItem.kerung.nylamContainer}</p></div>
+                    <div><span className="text-muted-foreground">Status</span><p className="font-medium">{viewedItem.kerung.status || '—'}</p></div>
+                    <div><span className="text-muted-foreground">Received CTN</span><p className="font-medium">{viewedItem.kerung.receivedCtn}</p></div>
+                    <div><span className="text-muted-foreground">Arrival</span><p className="font-medium">{viewedItem.kerung.arrivalDate || '—'}</p></div>
+                  </div>
+                </div>
+              )}
+              {(viewedItem.tatopani.dispatchedFromNylam || viewedItem.tatopani.loadedCtn > 0) && (
+                <div className="border-t pt-2">
+                  <h4 className="font-bold text-sm mb-2">TATOPANI</h4>
+                  <div className="grid grid-cols-3 gap-2 text-xs">
+                    <div><span className="text-muted-foreground">Dispatched</span><p className="font-medium">{viewedItem.tatopani.dispatchedFromNylam}</p></div>
+                    <div><span className="text-muted-foreground">Loaded CTN</span><p className="font-medium">{viewedItem.tatopani.loadedCtn}</p></div>
+                    <div><span className="text-muted-foreground">Container</span><p className="font-medium">{viewedItem.tatopani.nylamContainer}</p></div>
+                    <div><span className="text-muted-foreground">Status</span><p className="font-medium">{viewedItem.tatopani.status || '—'}</p></div>
+                    <div><span className="text-muted-foreground">Received CTN</span><p className="font-medium">{viewedItem.tatopani.receivedCtn}</p></div>
+                    <div><span className="text-muted-foreground">Arrival</span><p className="font-medium">{viewedItem.tatopani.arrivalDate || '—'}</p></div>
+                  </div>
+                </div>
+              )}
+              <div className="text-sm">
+                <span className="text-muted-foreground text-xs block">Remarks</span><span>{viewedItem.remarks || '—'}</span>
+              </div>
+              <div className="text-sm"><span className="text-muted-foreground text-xs block">Follow Up</span><span>{viewedItem.followUp ? '✓ Done' : '—'}</span></div>
             </div>
           )}
         </DialogContent>

@@ -49,7 +49,7 @@ export const OldNylamTable = () => {
   };
 
   const handleExport = () => {
-    const headers = ['Date', 'Consignment No', 'MARKA', 'Total CTN', 'CTN Remaining', 'Loaded CTN', 'CBM', 'GW', 'Destination', 'Dispatched from Nylam', 'Nylam Container', 'Arrival Location', 'Arrival Date', 'Client'];
+    const headers = ['Date', 'Consignment No', 'MARKA', 'Total CTN', 'CTN Remaining at Nylam', 'Loaded CTN', 'CBM', 'GW', 'Destination', 'Dispatched from Nylam', 'Nylam Container', 'Arrival Location', 'Arrival Date', 'Client'];
     const rows = oldNylamGoods.map(i => [i.date, i.consignmentNo, i.marka, i.totalCtn, i.ctnRemainingNylam, i.loadedCtn, i.cbm, i.gw, i.destination, i.dispatchedFromNylam, i.nylamContainer, i.arrivalLocation, i.arrivalDate, i.client].join('\t'));
     const blob = new Blob([[headers.join('\t'), ...rows].join('\n')], { type: 'text/tab-separated-values' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'old-nylam-goods.tsv'; a.click();
@@ -89,8 +89,8 @@ export const OldNylamTable = () => {
               <th className="p-2 text-left font-semibold">Consignment No.</th>
               <th className="p-2 text-left font-semibold">MARKA</th>
               <th className="p-2 text-left font-semibold highlight-cell">Total CTN</th>
-              <th className="p-2 text-left font-semibold highlight-cell">CTN Remaining</th>
-              <th className="p-2 text-left font-semibold">Loaded CTN</th>
+              <th className="p-2 text-left font-semibold highlight-cell">CTN Remaining at Nylam</th>
+              <th className="p-2 text-left font-semibold highlight-cell">Loaded CTN</th>
               <th className="p-2 text-left font-semibold">CBM</th>
               <th className="p-2 text-left font-semibold">GW</th>
               <th className="p-2 text-left font-semibold">Destination</th>
@@ -111,7 +111,7 @@ export const OldNylamTable = () => {
                 <td className="p-2">{item.marka}</td>
                 <td className="p-2 highlight-cell">{item.totalCtn}</td>
                 <td className="p-2 highlight-cell">{item.ctnRemainingNylam}</td>
-                <td className="p-2">{item.loadedCtn}</td>
+                <td className="p-2 highlight-cell">{item.loadedCtn}</td>
                 <td className="p-2">{item.cbm}</td>
                 <td className="p-2">{item.gw}</td>
                 <td className="p-2">{item.destination}</td>
@@ -145,7 +145,7 @@ export const OldNylamTable = () => {
             <div><label className="text-xs font-semibold">Consignment No.</label><Input value={form.consignmentNo} onChange={e => setForm({ ...form, consignmentNo: e.target.value })} /></div>
             <div><label className="text-xs font-semibold">MARKA</label><Input value={form.marka} onChange={e => setForm({ ...form, marka: e.target.value })} /></div>
             <div><label className="text-xs font-semibold">Total CTN</label><Input type="number" value={form.totalCtn} onChange={e => setForm({ ...form, totalCtn: Number(e.target.value) })} /></div>
-            <div><label className="text-xs font-semibold">CTN Remaining</label><Input type="number" value={form.ctnRemainingNylam} onChange={e => setForm({ ...form, ctnRemainingNylam: Number(e.target.value) })} /></div>
+            <div><label className="text-xs font-semibold">CTN Remaining at Nylam</label><Input type="number" value={form.ctnRemainingNylam} onChange={e => setForm({ ...form, ctnRemainingNylam: Number(e.target.value) })} /></div>
             <div><label className="text-xs font-semibold">Loaded CTN</label><Input type="number" value={form.loadedCtn} onChange={e => setForm({ ...form, loadedCtn: Number(e.target.value) })} /></div>
             <div><label className="text-xs font-semibold">CBM</label><Input type="number" step="0.01" value={form.cbm} onChange={e => setForm({ ...form, cbm: Number(e.target.value) })} /></div>
             <div><label className="text-xs font-semibold">GW</label><Input type="number" step="0.01" value={form.gw} onChange={e => setForm({ ...form, gw: Number(e.target.value) })} /></div>
@@ -161,13 +161,37 @@ export const OldNylamTable = () => {
       </Dialog>
 
       <Dialog open={!!showView} onOpenChange={() => setShowView(null)}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Details</DialogTitle></DialogHeader>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>Old Nylam Item Details</DialogTitle></DialogHeader>
           {viewedItem && (
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              {Object.entries(viewedItem).filter(([k]) => k !== 'id').map(([k, v]) => (
-                <div key={k}><span className="font-semibold capitalize">{k.replace(/([A-Z])/g, ' $1')}:</span> {String(v)}</div>
-              ))}
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3 rounded-lg bg-accent/10 border border-accent/20">
+                  <span className="text-xs text-muted-foreground">Consignment No.</span>
+                  <p className="font-bold">{viewedItem.consignmentNo}</p>
+                </div>
+                <div className="p-3 rounded-lg bg-accent/10 border border-accent/20">
+                  <span className="text-xs text-muted-foreground">MARKA</span>
+                  <p className="font-bold">{viewedItem.marka}</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="p-2 rounded bg-[hsl(var(--highlight))] text-[hsl(var(--highlight-foreground))]"><span className="text-xs opacity-70">Total CTN</span><p className="font-bold text-lg">{viewedItem.totalCtn}</p></div>
+                <div className="p-2 rounded bg-[hsl(var(--highlight))] text-[hsl(var(--highlight-foreground))]"><span className="text-xs opacity-70">CTN Remaining</span><p className="font-bold text-lg">{viewedItem.ctnRemainingNylam}</p></div>
+                <div className="p-2 rounded bg-[hsl(var(--highlight))] text-[hsl(var(--highlight-foreground))]"><span className="text-xs opacity-70">Loaded CTN</span><p className="font-bold text-lg">{viewedItem.loadedCtn}</p></div>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div><span className="text-muted-foreground text-xs block">Date</span><span>{viewedItem.date}</span></div>
+                <div><span className="text-muted-foreground text-xs block">Destination</span><span>{viewedItem.destination}</span></div>
+                <div><span className="text-muted-foreground text-xs block">CBM</span><span>{viewedItem.cbm}</span></div>
+                <div><span className="text-muted-foreground text-xs block">GW</span><span>{viewedItem.gw}</span></div>
+                <div><span className="text-muted-foreground text-xs block">Dispatched from Nylam</span><span>{viewedItem.dispatchedFromNylam}</span></div>
+                <div><span className="text-muted-foreground text-xs block">Nylam Container</span><span>{viewedItem.nylamContainer}</span></div>
+                <div><span className="text-muted-foreground text-xs block">Arrival Location</span><span>{viewedItem.arrivalLocation}</span></div>
+                <div><span className="text-muted-foreground text-xs block">Arrival Date</span><span>{viewedItem.arrivalDate}</span></div>
+                <div><span className="text-muted-foreground text-xs block">Client</span><span>{viewedItem.client}</span></div>
+                <div><span className="text-muted-foreground text-xs block">Follow Up</span><span>{viewedItem.followUp ? '✓' : '—'}</span></div>
+              </div>
             </div>
           )}
         </DialogContent>
