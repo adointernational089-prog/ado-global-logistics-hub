@@ -10,6 +10,7 @@ import { Search, Plus, Download, Upload, Eye, Trash2, Edit, FileSpreadsheet } fr
 import type { Consignment, Destination, ConsignmentStatus } from '@/types';
 import { DESTINATIONS, STATUSES, emptyKerung, emptyTatopani } from '@/types';
 import type { LoadingListItem } from '@/types';
+import { getStatusColor, getDestinationRowClass } from '@/lib/statusColors';
 
 const genId = () => crypto.randomUUID();
 
@@ -143,6 +144,12 @@ const Consignments = () => {
   const viewedC = showView ? consignments.find(c => c.id === showView) : null;
   const viewedL = viewedC ? loadingList.find(l => l.consignmentNo === viewedC.consignmentNo) : null;
 
+  const renderStatusBadge = (status: string) => {
+    if (!status) return <span className="text-muted-foreground">—</span>;
+    const colorClass = getStatusColor(status);
+    return <Badge variant="outline" className={`text-sm border ${colorClass}`}>{status}</Badge>;
+  };
+
   return (
     <div className="p-6">
       <h1 className="page-header">Consignments</h1>
@@ -167,40 +174,43 @@ const Consignments = () => {
           <thead className="bg-muted sticky top-0 z-20">
             <tr>
               <th className="p-3 w-10"><Checkbox checked={selected.length === filtered.length && filtered.length > 0} onCheckedChange={(checked) => setSelected(checked ? filtered.map(c => c.id) : [])} /></th>
-              <th className="p-3 text-left font-semibold sticky-col-left bg-muted" style={{ left: 40 }}>Consignment No.</th>
-              <th className="p-3 text-left font-semibold">Date</th>
-              <th className="p-3 text-left font-semibold">MARKA</th>
-              <th className="p-3 text-left font-semibold">Total CTNS</th>
-              <th className="p-3 text-left font-semibold">CBM</th>
-              <th className="p-3 text-left font-semibold">GW</th>
-              <th className="p-3 text-left font-semibold">Destination</th>
-              <th className="p-3 text-left font-semibold">Status</th>
-              <th className="p-3 text-left font-semibold">Client</th>
-              <th className="p-3 text-left font-semibold">Remarks</th>
-              <th className="p-3 text-left font-semibold sticky-col-right bg-muted">Actions</th>
+              <th className="p-3 text-left font-bold sticky-col-left bg-muted" style={{ left: 40 }}>Consignment No.</th>
+              <th className="p-3 text-left font-bold">Date</th>
+              <th className="p-3 text-left font-bold">MARKA</th>
+              <th className="p-3 text-left font-bold">Total CTNS</th>
+              <th className="p-3 text-left font-bold">CBM</th>
+              <th className="p-3 text-left font-bold">GW</th>
+              <th className="p-3 text-left font-bold">Destination</th>
+              <th className="p-3 text-left font-bold">Status</th>
+              <th className="p-3 text-left font-bold">Client</th>
+              <th className="p-3 text-left font-bold">Remarks</th>
+              <th className="p-3 text-left font-bold sticky-col-right bg-muted">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {filtered.map((c) => (
-              <tr key={c.id} className="border-t hover:bg-muted/50">
-                <td className="p-3"><Checkbox checked={selected.includes(c.id)} onCheckedChange={() => toggleSelect(c.id)} /></td>
-                <td className="p-3 font-medium sticky-col-left" style={{ left: 40 }}>{c.consignmentNo}</td>
-                <td className="p-3">{c.date}</td>
-                <td className="p-3">{c.marka}</td>
-                <td className="p-3">{c.totalCtns}</td>
-                <td className="p-3">{c.cbm}</td>
-                <td className="p-3">{c.gw}</td>
-                <td className="p-3">{c.destination}</td>
-                <td className="p-3">{c.status ? <Badge variant="outline">{c.status}</Badge> : <span className="text-muted-foreground">—</span>}</td>
-                <td className="p-3">{c.client}</td>
-                <td className="p-3">{c.remarks}</td>
-                <td className="p-3 sticky-col-right flex gap-1">
-                  <Button size="icon" variant="ghost" onClick={() => setShowView(c.id)}><Eye className="h-4 w-4" /></Button>
-                  <Button size="icon" variant="ghost" onClick={() => handleEdit(c)}><Edit className="h-4 w-4" /></Button>
-                  <Button size="icon" variant="ghost" onClick={() => deleteConsignment(c.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
-                </td>
-              </tr>
-            ))}
+            {filtered.map((c) => {
+              const destRowClass = getDestinationRowClass(c.destination);
+              return (
+                <tr key={c.id} className={`border-t hover:bg-muted/50 ${destRowClass}`}>
+                  <td className="p-3"><Checkbox checked={selected.includes(c.id)} onCheckedChange={() => toggleSelect(c.id)} /></td>
+                  <td className="p-3 font-semibold sticky-col-left" style={{ left: 40 }}>{c.consignmentNo}</td>
+                  <td className="p-3">{c.date}</td>
+                  <td className="p-3">{c.marka}</td>
+                  <td className="p-3">{c.totalCtns}</td>
+                  <td className="p-3">{c.cbm}</td>
+                  <td className="p-3">{c.gw}</td>
+                  <td className="p-3 font-medium">{c.destination}</td>
+                  <td className="p-3">{renderStatusBadge(c.status)}</td>
+                  <td className="p-3">{c.client}</td>
+                  <td className="p-3">{c.remarks}</td>
+                  <td className="p-3 sticky-col-right flex gap-1">
+                    <Button size="icon" variant="ghost" onClick={() => setShowView(c.id)}><Eye className="h-4 w-4" /></Button>
+                    <Button size="icon" variant="ghost" onClick={() => handleEdit(c)}><Edit className="h-4 w-4" /></Button>
+                    <Button size="icon" variant="ghost" onClick={() => deleteConsignment(c.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                  </td>
+                </tr>
+              );
+            })}
             {filtered.length === 0 && (
               <tr><td colSpan={12} className="p-8 text-center text-muted-foreground">No consignments found</td></tr>
             )}
@@ -211,23 +221,23 @@ const Consignments = () => {
       {/* Add/Edit Dialog */}
       <Dialog open={showAdd} onOpenChange={setShowAdd}>
         <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>{editId ? 'Edit' : 'Add'} Consignment</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle className="font-bold text-lg">{editId ? 'Edit' : 'Add'} Consignment</DialogTitle></DialogHeader>
           <div className="grid grid-cols-2 gap-3">
-            <div><label className="text-xs font-semibold">Date</label><Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
-            <div><label className="text-xs font-semibold">Consignment No.</label><Input value={form.consignmentNo} onChange={e => setForm({ ...form, consignmentNo: e.target.value })} /></div>
-            <div><label className="text-xs font-semibold">MARKA</label><Input value={form.marka} onChange={e => setForm({ ...form, marka: e.target.value })} /></div>
-            <div><label className="text-xs font-semibold">Total CTNS</label><Input type="number" value={form.totalCtns} onChange={e => setForm({ ...form, totalCtns: Number(e.target.value) })} /></div>
-            <div><label className="text-xs font-semibold">CBM</label><Input type="number" step="0.01" value={form.cbm} onChange={e => setForm({ ...form, cbm: Number(e.target.value) })} /></div>
-            <div><label className="text-xs font-semibold">GW</label><Input type="number" step="0.01" value={form.gw} onChange={e => setForm({ ...form, gw: Number(e.target.value) })} /></div>
+            <div><label className="text-xs font-bold">Date</label><Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
+            <div><label className="text-xs font-bold">Consignment No.</label><Input value={form.consignmentNo} onChange={e => setForm({ ...form, consignmentNo: e.target.value })} /></div>
+            <div><label className="text-xs font-bold">MARKA</label><Input value={form.marka} onChange={e => setForm({ ...form, marka: e.target.value })} /></div>
+            <div><label className="text-xs font-bold">Total CTNS</label><Input type="number" value={form.totalCtns} onChange={e => setForm({ ...form, totalCtns: Number(e.target.value) })} /></div>
+            <div><label className="text-xs font-bold">CBM</label><Input type="number" step="0.01" value={form.cbm} onChange={e => setForm({ ...form, cbm: Number(e.target.value) })} /></div>
+            <div><label className="text-xs font-bold">GW</label><Input type="number" step="0.01" value={form.gw} onChange={e => setForm({ ...form, gw: Number(e.target.value) })} /></div>
             <div>
-              <label className="text-xs font-semibold">Destination</label>
+              <label className="text-xs font-bold">Destination</label>
               <Select value={form.destination} onValueChange={v => setForm({ ...form, destination: v as Destination })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>{DESTINATIONS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div>
-              <label className="text-xs font-semibold">Status</label>
+              <label className="text-xs font-bold">Status</label>
               <Select value={form.status || '_none'} onValueChange={v => setForm({ ...form, status: v === '_none' ? '' as any : v as ConsignmentStatus })}>
                 <SelectTrigger><SelectValue placeholder="Select status" /></SelectTrigger>
                 <SelectContent>
@@ -236,17 +246,17 @@ const Consignments = () => {
                 </SelectContent>
               </Select>
             </div>
-            <div><label className="text-xs font-semibold">Client</label><Input value={form.client} onChange={e => setForm({ ...form, client: e.target.value })} /></div>
-            <div><label className="text-xs font-semibold">Remarks</label><Input value={form.remarks} onChange={e => setForm({ ...form, remarks: e.target.value })} /></div>
+            <div><label className="text-xs font-bold">Client</label><Input value={form.client} onChange={e => setForm({ ...form, client: e.target.value })} /></div>
+            <div><label className="text-xs font-bold">Remarks</label><Input value={form.remarks} onChange={e => setForm({ ...form, remarks: e.target.value })} /></div>
           </div>
           <Button className="mt-4 w-full" onClick={handleSave}>{editId ? 'Update' : 'Add'} Consignment</Button>
         </DialogContent>
       </Dialog>
 
-      {/* View Dialog - Attractive */}
+      {/* View Dialog */}
       <Dialog open={!!showView} onOpenChange={() => setShowView(null)}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader><DialogTitle className="text-lg">Consignment Details</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle className="font-bold text-lg">Consignment Details</DialogTitle></DialogHeader>
           {viewedC && (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
@@ -266,11 +276,11 @@ const Consignments = () => {
                 </div>
                 <div className="p-3 rounded-lg bg-accent/10 border">
                   <span className="text-xs text-muted-foreground">Client</span>
-                  <p className="font-bold">{viewedC.client}</p>
+                  <p className="font-bold text-base">{viewedC.client}</p>
                 </div>
                 <div className="p-3 rounded-lg bg-accent/10 border">
                   <span className="text-xs text-muted-foreground">Status</span>
-                  <p className="font-semibold">{viewedC.status || '—'}</p>
+                  <div className="mt-1">{renderStatusBadge(viewedC.status)}</div>
                 </div>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
@@ -293,27 +303,27 @@ const Consignments = () => {
                   </div>
                   {(viewedL.kerung.dispatchedFromNylam || viewedL.kerung.loadedCtn > 0) && (
                     <div className="border-t pt-2">
-                      <h4 className="font-semibold text-sm mb-1">KERUNG</h4>
-                      <div className="grid grid-cols-3 gap-2 text-xs">
-                        <div><span className="text-muted-foreground">Dispatched</span><p>{viewedL.kerung.dispatchedFromNylam}</p></div>
-                        <div><span className="text-muted-foreground">Loaded CTN</span><p>{viewedL.kerung.loadedCtn}</p></div>
-                        <div><span className="text-muted-foreground">Container</span><p>{viewedL.kerung.nylamContainer}</p></div>
-                        <div><span className="text-muted-foreground">Status</span><p>{viewedL.kerung.status || '—'}</p></div>
-                        <div><span className="text-muted-foreground">Received CTN</span><p>{viewedL.kerung.receivedCtn}</p></div>
-                        <div><span className="text-muted-foreground">Arrival</span><p>{viewedL.kerung.arrivalDate || '—'}</p></div>
+                      <h4 className="font-bold text-sm mb-1">KERUNG</h4>
+                      <div className="grid grid-cols-3 gap-3 text-sm">
+                        <div><span className="text-muted-foreground text-xs">Dispatched</span><p className="font-medium">{viewedL.kerung.dispatchedFromNylam}</p></div>
+                        <div><span className="text-muted-foreground text-xs">Loaded CTN</span><p className="font-medium">{viewedL.kerung.loadedCtn}</p></div>
+                        <div><span className="text-muted-foreground text-xs">Container</span><p className="font-medium">{viewedL.kerung.nylamContainer}</p></div>
+                        <div><span className="text-muted-foreground text-xs">Status</span>{renderStatusBadge(viewedL.kerung.status)}</div>
+                        <div><span className="text-muted-foreground text-xs">Received CTN</span><p className="font-medium">{viewedL.kerung.receivedCtn}</p></div>
+                        <div><span className="text-muted-foreground text-xs">Arrival</span><p className="font-medium">{viewedL.kerung.arrivalDate || '—'}</p></div>
                       </div>
                     </div>
                   )}
                   {(viewedL.tatopani.dispatchedFromNylam || viewedL.tatopani.loadedCtn > 0) && (
                     <div className="border-t pt-2">
-                      <h4 className="font-semibold text-sm mb-1">TATOPANI</h4>
-                      <div className="grid grid-cols-3 gap-2 text-xs">
-                        <div><span className="text-muted-foreground">Dispatched</span><p>{viewedL.tatopani.dispatchedFromNylam}</p></div>
-                        <div><span className="text-muted-foreground">Loaded CTN</span><p>{viewedL.tatopani.loadedCtn}</p></div>
-                        <div><span className="text-muted-foreground">Container</span><p>{viewedL.tatopani.nylamContainer}</p></div>
-                        <div><span className="text-muted-foreground">Status</span><p>{viewedL.tatopani.status || '—'}</p></div>
-                        <div><span className="text-muted-foreground">Received CTN</span><p>{viewedL.tatopani.receivedCtn}</p></div>
-                        <div><span className="text-muted-foreground">Arrival</span><p>{viewedL.tatopani.arrivalDate || '—'}</p></div>
+                      <h4 className="font-bold text-sm mb-1">TATOPANI</h4>
+                      <div className="grid grid-cols-3 gap-3 text-sm">
+                        <div><span className="text-muted-foreground text-xs">Dispatched</span><p className="font-medium">{viewedL.tatopani.dispatchedFromNylam}</p></div>
+                        <div><span className="text-muted-foreground text-xs">Loaded CTN</span><p className="font-medium">{viewedL.tatopani.loadedCtn}</p></div>
+                        <div><span className="text-muted-foreground text-xs">Container</span><p className="font-medium">{viewedL.tatopani.nylamContainer}</p></div>
+                        <div><span className="text-muted-foreground text-xs">Status</span>{renderStatusBadge(viewedL.tatopani.status)}</div>
+                        <div><span className="text-muted-foreground text-xs">Received CTN</span><p className="font-medium">{viewedL.tatopani.receivedCtn}</p></div>
+                        <div><span className="text-muted-foreground text-xs">Arrival</span><p className="font-medium">{viewedL.tatopani.arrivalDate || '—'}</p></div>
                       </div>
                     </div>
                   )}
@@ -327,14 +337,14 @@ const Consignments = () => {
       {/* Import Dialog */}
       <Dialog open={showImport} onOpenChange={setShowImport}>
         <DialogContent className="max-w-lg">
-          <DialogHeader><DialogTitle>Import Consignments</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle className="font-bold">Import Consignments</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div>
-              <label className="text-sm font-semibold">Upload Excel/CSV file</label>
+              <label className="text-sm font-bold">Upload Excel/CSV file</label>
               <Input type="file" accept=".csv,.tsv,.txt,.xlsx" onChange={handleFileImport} />
             </div>
             <div>
-              <label className="text-sm font-semibold">Or paste tab-separated data</label>
+              <label className="text-sm font-bold">Or paste tab-separated data</label>
               <textarea className="w-full border rounded p-2 h-32 text-sm" placeholder="Date&#9;Consignment No&#9;MARKA&#9;Total CTNS&#9;CBM&#9;GW&#9;Destination&#9;Status&#9;Client&#9;Remarks" value={importText} onChange={e => setImportText(e.target.value)} />
             </div>
             <Button className="w-full" onClick={handleImport}><FileSpreadsheet className="h-4 w-4 mr-1" />Import</Button>
@@ -345,7 +355,7 @@ const Consignments = () => {
       {/* Master Edit Dialog */}
       <Dialog open={showMasterEdit} onOpenChange={setShowMasterEdit}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Master Edit - Status</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle className="font-bold">Master Edit - Status</DialogTitle></DialogHeader>
           <Select value={masterStatus} onValueChange={v => setMasterStatus(v as ConsignmentStatus)}>
             <SelectTrigger><SelectValue placeholder="Select status" /></SelectTrigger>
             <SelectContent>{STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
