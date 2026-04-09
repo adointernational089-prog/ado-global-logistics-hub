@@ -1,0 +1,498 @@
+import { useState, useMemo } from 'react';
+import { useStore } from '@/store/useStore';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Search, Plus, Download, Upload, Eye, Trash2, Edit, ChevronDown, ChevronRight, FileSpreadsheet, Check } from 'lucide-react';
+import type { LoadingListItem, Destination, ConsignmentStatus, KerungDetails, TatopaniDetails } from '@/types';
+import { DESTINATIONS, STATUSES, TATOPANI_STATUSES, KERUNG_STATUSES, emptyKerung, emptyTatopani } from '@/types';
+
+const genId = () => crypto.randomUUID();
+
+interface Props {
+  origin: 'guangzhou' | 'yiwu';
+}
+
+export const LoadingListTable = ({ origin }: Props) => {
+  const { loadingList, addLoadingListItem, updateLoadingListItem, deleteLoadingListItem, consignments, updateConsignment, addConsignment } = useStore();
+  const [search, setSearch] = useState('');
+  const [showAdd, setShowAdd] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [showView, setShowView] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [expandedKerung, setExpandedKerung] = useState<string[]>([]);
+  const [expandedTatopani, setExpandedTatopani] = useState<string[]>([]);
+  const [showMasterEdit, setShowMasterEdit] = useState(false);
+  const [showTatopaniEdit, setShowTatopaniEdit] = useState(false);
+  const [showKerungEdit, setShowKerungEdit] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [importText, setImportText] = useState('');
+
+  const label = origin === 'guangzhou' ? 'Guangzhou' : 'Yiwu';
+  const items = useMemo(() => loadingList.filter(l => l.origin === origin), [loadingList, origin]);
+  const filtered = useMemo(() => items.filter(i =>
+    Object.values(i).some(v => String(v).toLowerCase().includes(search.toLowerCase()))
+  ), [items, search]);
+
+  const [form, setForm] = useState<Omit<LoadingListItem, 'id'>>({
+    date: '', consignmentNo: '', marka: '', totalCtns: 0, cbm: 0, gw: 0,
+    destination: 'TATOPANI', lotNo: '', dispatchedFrom: '', container: '',
+    status: 'On the way to Lhasa', arrivalDateNylam: '',
+    kerung: emptyKerung(), tatopani: emptyTatopani(),
+    client: '', remarks: '', followUp: false, origin,
+  });
+
+  const [masterForm, setMasterForm] = useState({ lotNo: '', dispatchedFrom: '', container: '', dispatchedNylamKerung: '', nylamContainerKerung: '', dispatchedNylamTatopani: '', nylamContainerTatopani: '' });
+  const [tatopaniForm, setTatopaniForm] = useState({ dispatchedFromNylam: '', nylamContainer: '', status: '' as string, arrivalDate: '' });
+  const [kerungForm, setKerungForm] = useState({ dispatchedFromNylam: '', nylamContainer: '', status: '' as string, arrivalDate: '' });
+
+  const resetForm = () => setForm({
+    date: '', consignmentNo: '', marka: '', totalCtns: 0, cbm: 0, gw: 0,
+    destination: 'TATOPANI', lotNo: '', dispatchedFrom: '', container: '',
+    status: 'On the way to Lhasa', arrivalDateNylam: '',
+    kerung: emptyKerung(), tatopani: emptyTatopani(),
+    client: '', remarks: '', followUp: false, origin,
+  });
+
+  const calcOnTheWay = (item: LoadingListItem) => {
+    let count = 0;
+    if (item.tatopani.status === 'On the way to Tatopani') count += item.tatopani.loadedCtn;
+    if (item.kerung.status === 'On the way to Kerung') count += item.kerung.loadedCtn;
+    return count;
+  };
+
+  const calcMissing = (item: LoadingListItem) => {
+    const tatRecv = item.tatopani.receivedCtn;
+    const kerRecv = item.kerung.receivedCtn;
+    if (tatRecv === 0 && kerRecv === 0) return 0;
+    return (item.tatopani.loadedCtn + item.kerung.loadedCtn) - tatRecv - kerRecv;
+  };
+
+  const calcRemaining = (item: LoadingListItem) => {
+    return item.totalCtns - item.tatopani.loadedCtn - item.kerung.loadedCtn;
+  };
+
+  const syncToConsignments = (item: LoadingListItem) => {
+    const existing = consignments.find(c => c.consignmentNo === item.consignmentNo);
+    if (existing) {
+      updateConsignment(existing.id, {
+        date: item.date, marka: item.marka, totalCtns: item.totalCtns, cbm: item.cbm,
+        gw: item.gw, destination: item.destination, status: item.status, client: item.client, remarks: item.remarks
+      });
+    } else {
+      addConsignment({
+        id: genId(), date: item.date, consignmentNo: item.consignmentNo, marka: item.marka,
+        totalCtns: item.totalCtns, cbm: item.cbm, gw: item.gw, destination: item.destination,
+        status: item.status, client: item.client, remarks: item.remarks,
+      });
+    }
+  };
+
+  const handleSave = () => {
+    if (editId) {
+      updateLoadingListItem(editId, form);
+      syncToConsignments({ id: editId, ...form });
+      setEditId(null);
+    } else {
+      const newItem: LoadingListItem = { id: genId(), ...form };
+      addLoadingListItem(newItem);
+      syncToConsignments(newItem);
+    }
+    setShowAdd(false);
+    resetForm();
+  };
+
+  const handleEdit = (item: LoadingListItem) => {
+    const { id, ...rest } = item;
+    setForm(rest);
+    setEditId(id);
+    setShowAdd(true);
+  };
+
+  const handleMasterEdit = () => {
+    selected.forEach(id => {
+      const updates: Partial<LoadingListItem> = {};
+      if (masterForm.lotNo) updates.lotNo = masterForm.lotNo;
+      if (masterForm.dispatchedFrom) updates.dispatchedFrom = masterForm.dispatchedFrom;
+      if (masterForm.container) updates.container = masterForm.container;
+      if (masterForm.dispatchedNylamKerung || masterForm.nylamContainerKerung) {
+        const item = loadingList.find(l => l.id === id);
+        if (item) {
+          updates.kerung = { ...item.kerung };
+          if (masterForm.dispatchedNylamKerung) updates.kerung.dispatchedFromNylam = masterForm.dispatchedNylamKerung;
+          if (masterForm.nylamContainerKerung) updates.kerung.nylamContainer = masterForm.nylamContainerKerung;
+        }
+      }
+      if (masterForm.dispatchedNylamTatopani || masterForm.nylamContainerTatopani) {
+        const item = loadingList.find(l => l.id === id);
+        if (item) {
+          updates.tatopani = { ...item.tatopani };
+          if (masterForm.dispatchedNylamTatopani) updates.tatopani.dispatchedFromNylam = masterForm.dispatchedNylamTatopani;
+          if (masterForm.nylamContainerTatopani) updates.tatopani.nylamContainer = masterForm.nylamContainerTatopani;
+        }
+      }
+      updateLoadingListItem(id, updates);
+    });
+    setShowMasterEdit(false);
+    setSelected([]);
+    setMasterForm({ lotNo: '', dispatchedFrom: '', container: '', dispatchedNylamKerung: '', nylamContainerKerung: '', dispatchedNylamTatopani: '', nylamContainerTatopani: '' });
+  };
+
+  const handleTatopaniEdit = () => {
+    selected.forEach(id => {
+      const item = loadingList.find(l => l.id === id);
+      if (item) {
+        const updates: Partial<TatopaniDetails> = {};
+        if (tatopaniForm.dispatchedFromNylam) updates.dispatchedFromNylam = tatopaniForm.dispatchedFromNylam;
+        if (tatopaniForm.nylamContainer) updates.nylamContainer = tatopaniForm.nylamContainer;
+        if (tatopaniForm.status) updates.status = tatopaniForm.status as any;
+        if (tatopaniForm.arrivalDate) updates.arrivalDate = tatopaniForm.arrivalDate;
+        updateLoadingListItem(id, { tatopani: { ...item.tatopani, ...updates } });
+      }
+    });
+    setShowTatopaniEdit(false);
+    setSelected([]);
+    setTatopaniForm({ dispatchedFromNylam: '', nylamContainer: '', status: '', arrivalDate: '' });
+  };
+
+  const handleKerungEdit = () => {
+    selected.forEach(id => {
+      const item = loadingList.find(l => l.id === id);
+      if (item) {
+        const updates: Partial<KerungDetails> = {};
+        if (kerungForm.dispatchedFromNylam) updates.dispatchedFromNylam = kerungForm.dispatchedFromNylam;
+        if (kerungForm.nylamContainer) updates.nylamContainer = kerungForm.nylamContainer;
+        if (kerungForm.status) updates.status = kerungForm.status as any;
+        if (kerungForm.arrivalDate) updates.arrivalDate = kerungForm.arrivalDate;
+        updateLoadingListItem(id, { kerung: { ...item.kerung, ...updates } });
+      }
+    });
+    setShowKerungEdit(false);
+    setSelected([]);
+    setKerungForm({ dispatchedFromNylam: '', nylamContainer: '', status: '', arrivalDate: '' });
+  };
+
+  const handleFollowUpToggle = (id: string) => {
+    const item = loadingList.find(l => l.id === id);
+    if (item) updateLoadingListItem(id, { followUp: !item.followUp });
+  };
+
+  const handleImport = () => {
+    if (!importText.trim()) return;
+    const lines = importText.trim().split('\n');
+    for (let i = 1; i < lines.length; i++) {
+      const vals = lines[i].split('\t');
+      if (vals.length < 2) continue;
+      const newItem: LoadingListItem = {
+        id: genId(), date: vals[0] || '', consignmentNo: vals[1] || '', marka: vals[2] || '',
+        totalCtns: Number(vals[3]) || 0, cbm: Number(vals[4]) || 0, gw: Number(vals[5]) || 0,
+        destination: (vals[6] as Destination) || 'TATOPANI', lotNo: vals[7] || '',
+        dispatchedFrom: vals[8] || '', container: vals[9] || '',
+        status: (vals[10] as ConsignmentStatus) || 'On the way to Lhasa',
+        arrivalDateNylam: '', kerung: emptyKerung(), tatopani: emptyTatopani(),
+        client: vals[11] || '', remarks: vals[12] || '', followUp: false, origin,
+      };
+      addLoadingListItem(newItem);
+      syncToConsignments(newItem);
+    }
+    setShowImport(false);
+    setImportText('');
+  };
+
+  const handleExport = () => {
+    const headers = ['Date', 'Consignment No', 'MARKA', 'Total CTNS', 'CBM', 'GW', 'Destination', 'LOT No', `Dispatched from ${label}`, `${label} Container`, 'Status', 'Client', 'Remarks'];
+    const rows = items.map(i => [i.date, i.consignmentNo, i.marka, i.totalCtns, i.cbm, i.gw, i.destination, i.lotNo, i.dispatchedFrom, i.container, i.status, i.client, i.remarks].join('\t'));
+    const csv = [headers.join('\t'), ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/tab-separated-values' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `loading-list-${origin}.tsv`; a.click();
+  };
+
+  const viewedItem = showView ? items.find(i => i.id === showView) : null;
+
+  const toggleSelect = (id: string) => setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+
+  const handleInlineEdit = (id: string, field: string, value: any) => {
+    updateLoadingListItem(id, { [field]: value } as any);
+  };
+
+  return (
+    <div>
+      <div className="toolbar">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-10" />
+        </div>
+        <Button onClick={() => { resetForm(); setEditId(null); setShowAdd(true); }}><Plus className="h-4 w-4 mr-1" />Add</Button>
+        <Button variant="outline" onClick={() => setShowImport(true)}><Upload className="h-4 w-4 mr-1" />Import</Button>
+        <Button variant="outline" onClick={handleExport}><Download className="h-4 w-4 mr-1" />Export</Button>
+        {selected.length > 0 && (
+          <>
+            <Button variant="secondary" onClick={() => setShowMasterEdit(true)}><Edit className="h-4 w-4 mr-1" />Master Edit ({selected.length})</Button>
+            <Button variant="secondary" onClick={() => setShowTatopaniEdit(true)}>TATOPANI Edit</Button>
+            <Button variant="secondary" onClick={() => setShowKerungEdit(true)}>KERUNG Edit</Button>
+          </>
+        )}
+      </div>
+
+      <div className="table-container border rounded-lg">
+        <table className="w-full text-xs whitespace-nowrap">
+          <thead className="bg-muted sticky top-0 z-20">
+            <tr>
+              <th className="p-2 w-8"><Checkbox checked={selected.length === filtered.length && filtered.length > 0} onCheckedChange={(c) => setSelected(c ? filtered.map(i => i.id) : [])} /></th>
+              <th className="p-2 text-left font-semibold sticky-col-left bg-muted" style={{ left: 32 }}>Consignment No.</th>
+              <th className="p-2 text-left font-semibold">Date</th>
+              <th className="p-2 text-left font-semibold">MARKA</th>
+              <th className="p-2 text-left font-semibold">Total CTNS</th>
+              <th className="p-2 text-left font-semibold">CBM</th>
+              <th className="p-2 text-left font-semibold">GW</th>
+              <th className="p-2 text-left font-semibold">Destination</th>
+              <th className="p-2 text-left font-semibold">LOT No.</th>
+              <th className="p-2 text-left font-semibold">Dispatched from {label}</th>
+              <th className="p-2 text-left font-semibold">{label} Container</th>
+              <th className="p-2 text-left font-semibold">Status</th>
+              <th className="p-2 text-left font-semibold">Arrival at Nylam</th>
+              <th className="p-2 text-left font-semibold cursor-pointer">KERUNG ▼</th>
+              <th className="p-2 text-left font-semibold cursor-pointer">TATOPANI ▼</th>
+              <th className="p-2 text-left font-semibold highlight-cell">On the Way</th>
+              <th className="p-2 text-left font-semibold highlight-cell">Missing CTN</th>
+              <th className="p-2 text-left font-semibold highlight-cell">Remaining CTN</th>
+              <th className="p-2 text-left font-semibold">Client</th>
+              <th className="p-2 text-left font-semibold">Remarks</th>
+              <th className="p-2 text-left font-semibold">Follow Up</th>
+              <th className="p-2 text-left font-semibold sticky-col-right bg-muted">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((item) => {
+              const isKerungExpanded = expandedKerung.includes(item.id);
+              const isTatopaniExpanded = expandedTatopani.includes(item.id);
+              return (
+                <>
+                  <tr key={item.id} className="border-t hover:bg-muted/50">
+                    <td className="p-2"><Checkbox checked={selected.includes(item.id)} onCheckedChange={() => toggleSelect(item.id)} /></td>
+                    <td className="p-2 font-medium sticky-col-left" style={{ left: 32 }}>{item.consignmentNo}</td>
+                    <td className="p-2">{item.date}</td>
+                    <td className="p-2">{item.marka}</td>
+                    <td className="p-2">{item.totalCtns}</td>
+                    <td className="p-2">{item.cbm}</td>
+                    <td className="p-2">{item.gw}</td>
+                    <td className="p-2">{item.destination}</td>
+                    <td className="p-2">{item.lotNo}</td>
+                    <td className="p-2">{item.dispatchedFrom}</td>
+                    <td className="p-2">{item.container}</td>
+                    <td className="p-2"><Badge variant="outline" className="text-xs">{item.status}</Badge></td>
+                    <td className="p-2">{item.arrivalDateNylam}</td>
+                    <td className="p-2">
+                      <Button size="sm" variant="ghost" className="h-6 px-1 text-xs" onClick={() => setExpandedKerung(prev => prev.includes(item.id) ? prev.filter(x => x !== item.id) : [...prev, item.id])}>
+                        {isKerungExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                        KERUNG
+                      </Button>
+                    </td>
+                    <td className="p-2">
+                      <Button size="sm" variant="ghost" className="h-6 px-1 text-xs" onClick={() => setExpandedTatopani(prev => prev.includes(item.id) ? prev.filter(x => x !== item.id) : [...prev, item.id])}>
+                        {isTatopaniExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                        TATOPANI
+                      </Button>
+                    </td>
+                    <td className="p-2 highlight-cell">{calcOnTheWay(item) || '-'}</td>
+                    <td className="p-2 highlight-cell">{calcMissing(item) || '-'}</td>
+                    <td className="p-2 highlight-cell">{calcRemaining(item)}</td>
+                    <td className="p-2">{item.client}</td>
+                    <td className="p-2">{item.remarks}</td>
+                    <td className="p-2 text-center">
+                      <div className="cursor-pointer" onDoubleClick={() => handleFollowUpToggle(item.id)}>
+                        {item.followUp ? <Check className="h-4 w-4 text-success mx-auto" /> : <span className="text-muted-foreground">—</span>}
+                      </div>
+                    </td>
+                    <td className="p-2 sticky-col-right flex gap-1">
+                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setShowView(item.id)}><Eye className="h-3 w-3" /></Button>
+                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => handleEdit(item)}><Edit className="h-3 w-3" /></Button>
+                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => deleteLoadingListItem(item.id)}><Trash2 className="h-3 w-3 text-destructive" /></Button>
+                    </td>
+                  </tr>
+                  {isKerungExpanded && (
+                    <tr key={`${item.id}-kerung`} className="bg-accent/10">
+                      <td colSpan={22} className="p-3">
+                        <div className="grid grid-cols-6 gap-2 text-xs">
+                          <div><label className="font-semibold block">Dispatched from Nylam</label><Input className="h-7 text-xs" value={item.kerung.dispatchedFromNylam} onChange={e => updateLoadingListItem(item.id, { kerung: { ...item.kerung, dispatchedFromNylam: e.target.value } })} /></div>
+                          <div><label className="font-semibold block">Loaded CTN</label><Input className="h-7 text-xs" type="number" value={item.kerung.loadedCtn} onChange={e => updateLoadingListItem(item.id, { kerung: { ...item.kerung, loadedCtn: Number(e.target.value) } })} /></div>
+                          <div><label className="font-semibold block">Nylam Container</label><Input className="h-7 text-xs" value={item.kerung.nylamContainer} onChange={e => updateLoadingListItem(item.id, { kerung: { ...item.kerung, nylamContainer: e.target.value } })} /></div>
+                          <div><label className="font-semibold block">Status</label>
+                            <Select value={item.kerung.status} onValueChange={v => updateLoadingListItem(item.id, { kerung: { ...item.kerung, status: v as any } })}>
+                              <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="Status" /></SelectTrigger>
+                              <SelectContent>{KERUNG_STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+                            </Select>
+                          </div>
+                          <div><label className="font-semibold block">Received CTN</label><Input className="h-7 text-xs" type="number" value={item.kerung.receivedCtn} onChange={e => updateLoadingListItem(item.id, { kerung: { ...item.kerung, receivedCtn: Number(e.target.value) } })} /></div>
+                          <div><label className="font-semibold block">Arrival Date</label><Input className="h-7 text-xs" type="date" value={item.kerung.arrivalDate} onChange={e => updateLoadingListItem(item.id, { kerung: { ...item.kerung, arrivalDate: e.target.value } })} /></div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  {isTatopaniExpanded && (
+                    <tr key={`${item.id}-tatopani`} className="bg-accent/10">
+                      <td colSpan={22} className="p-3">
+                        <div className="grid grid-cols-6 gap-2 text-xs">
+                          <div><label className="font-semibold block">Dispatched from Nylam</label><Input className="h-7 text-xs" value={item.tatopani.dispatchedFromNylam} onChange={e => updateLoadingListItem(item.id, { tatopani: { ...item.tatopani, dispatchedFromNylam: e.target.value } })} /></div>
+                          <div><label className="font-semibold block">Loaded CTN</label><Input className="h-7 text-xs" type="number" value={item.tatopani.loadedCtn} onChange={e => updateLoadingListItem(item.id, { tatopani: { ...item.tatopani, loadedCtn: Number(e.target.value) } })} /></div>
+                          <div><label className="font-semibold block">Nylam Container</label><Input className="h-7 text-xs" value={item.tatopani.nylamContainer} onChange={e => updateLoadingListItem(item.id, { tatopani: { ...item.tatopani, nylamContainer: e.target.value } })} /></div>
+                          <div><label className="font-semibold block">Status</label>
+                            <Select value={item.tatopani.status} onValueChange={v => updateLoadingListItem(item.id, { tatopani: { ...item.tatopani, status: v as any } })}>
+                              <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="Status" /></SelectTrigger>
+                              <SelectContent>{TATOPANI_STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+                            </Select>
+                          </div>
+                          <div><label className="font-semibold block">Received CTN</label><Input className="h-7 text-xs" type="number" value={item.tatopani.receivedCtn} onChange={e => updateLoadingListItem(item.id, { tatopani: { ...item.tatopani, receivedCtn: Number(e.target.value) } })} /></div>
+                          <div><label className="font-semibold block">Arrival Date</label><Input className="h-7 text-xs" type="date" value={item.tatopani.arrivalDate} onChange={e => updateLoadingListItem(item.id, { tatopani: { ...item.tatopani, arrivalDate: e.target.value } })} /></div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </>
+              );
+            })}
+            {filtered.length === 0 && (
+              <tr><td colSpan={22} className="p-8 text-center text-muted-foreground">No items found</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Add/Edit Dialog */}
+      <Dialog open={showAdd} onOpenChange={setShowAdd}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>{editId ? 'Edit' : 'Add'} Loading List Item</DialogTitle></DialogHeader>
+          <div className="grid grid-cols-3 gap-3">
+            <div><label className="text-xs font-semibold">Date</label><Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
+            <div><label className="text-xs font-semibold">Consignment No.</label><Input value={form.consignmentNo} onChange={e => setForm({ ...form, consignmentNo: e.target.value })} /></div>
+            <div><label className="text-xs font-semibold">MARKA</label><Input value={form.marka} onChange={e => setForm({ ...form, marka: e.target.value })} /></div>
+            <div><label className="text-xs font-semibold">Total CTNS</label><Input type="number" value={form.totalCtns} onChange={e => setForm({ ...form, totalCtns: Number(e.target.value) })} /></div>
+            <div><label className="text-xs font-semibold">CBM</label><Input type="number" step="0.01" value={form.cbm} onChange={e => setForm({ ...form, cbm: Number(e.target.value) })} /></div>
+            <div><label className="text-xs font-semibold">GW</label><Input type="number" step="0.01" value={form.gw} onChange={e => setForm({ ...form, gw: Number(e.target.value) })} /></div>
+            <div><label className="text-xs font-semibold">Destination</label>
+              <Select value={form.destination} onValueChange={v => setForm({ ...form, destination: v as Destination })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{DESTINATIONS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}</SelectContent></Select>
+            </div>
+            <div><label className="text-xs font-semibold">LOT No.</label><Input value={form.lotNo} onChange={e => setForm({ ...form, lotNo: e.target.value })} /></div>
+            <div><label className="text-xs font-semibold">Dispatched from {label}</label><Input value={form.dispatchedFrom} onChange={e => setForm({ ...form, dispatchedFrom: e.target.value })} /></div>
+            <div><label className="text-xs font-semibold">{label} Container</label><Input value={form.container} onChange={e => setForm({ ...form, container: e.target.value })} /></div>
+            <div><label className="text-xs font-semibold">Status</label>
+              <Select value={form.status} onValueChange={v => setForm({ ...form, status: v as ConsignmentStatus })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent></Select>
+            </div>
+            <div><label className="text-xs font-semibold">Client</label><Input value={form.client} onChange={e => setForm({ ...form, client: e.target.value })} /></div>
+            <div className="col-span-3"><label className="text-xs font-semibold">Remarks</label><Input value={form.remarks} onChange={e => setForm({ ...form, remarks: e.target.value })} /></div>
+          </div>
+          <Button className="mt-4 w-full" onClick={handleSave}>{editId ? 'Update' : 'Add'}</Button>
+        </DialogContent>
+      </Dialog>
+
+      {/* View Dialog */}
+      <Dialog open={!!showView} onOpenChange={() => setShowView(null)}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Loading List Details</DialogTitle></DialogHeader>
+          {viewedItem && (
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div><span className="font-semibold">Date:</span> {viewedItem.date}</div>
+              <div><span className="font-semibold">Consignment No:</span> {viewedItem.consignmentNo}</div>
+              <div><span className="font-semibold">MARKA:</span> {viewedItem.marka}</div>
+              <div><span className="font-semibold">Total CTNS:</span> {viewedItem.totalCtns}</div>
+              <div><span className="font-semibold">CBM:</span> {viewedItem.cbm}</div>
+              <div><span className="font-semibold">GW:</span> {viewedItem.gw}</div>
+              <div><span className="font-semibold">Destination:</span> {viewedItem.destination}</div>
+              <div><span className="font-semibold">LOT No:</span> {viewedItem.lotNo}</div>
+              <div><span className="font-semibold">Dispatched from {label}:</span> {viewedItem.dispatchedFrom}</div>
+              <div><span className="font-semibold">{label} Container:</span> {viewedItem.container}</div>
+              <div><span className="font-semibold">Status:</span> {viewedItem.status}</div>
+              <div><span className="font-semibold">Arrival at Nylam:</span> {viewedItem.arrivalDateNylam}</div>
+              <div className="col-span-2 border-t pt-2 mt-2"><h3 className="font-bold">KERUNG</h3></div>
+              <div><span className="font-semibold">Dispatched:</span> {viewedItem.kerung.dispatchedFromNylam}</div>
+              <div><span className="font-semibold">Loaded CTN:</span> {viewedItem.kerung.loadedCtn}</div>
+              <div><span className="font-semibold">Container:</span> {viewedItem.kerung.nylamContainer}</div>
+              <div><span className="font-semibold">Status:</span> {viewedItem.kerung.status}</div>
+              <div><span className="font-semibold">Received CTN:</span> {viewedItem.kerung.receivedCtn}</div>
+              <div><span className="font-semibold">Arrival:</span> {viewedItem.kerung.arrivalDate}</div>
+              <div className="col-span-2 border-t pt-2 mt-2"><h3 className="font-bold">TATOPANI</h3></div>
+              <div><span className="font-semibold">Dispatched:</span> {viewedItem.tatopani.dispatchedFromNylam}</div>
+              <div><span className="font-semibold">Loaded CTN:</span> {viewedItem.tatopani.loadedCtn}</div>
+              <div><span className="font-semibold">Container:</span> {viewedItem.tatopani.nylamContainer}</div>
+              <div><span className="font-semibold">Status:</span> {viewedItem.tatopani.status}</div>
+              <div><span className="font-semibold">Received CTN:</span> {viewedItem.tatopani.receivedCtn}</div>
+              <div><span className="font-semibold">Arrival:</span> {viewedItem.tatopani.arrivalDate}</div>
+              <div className="col-span-2 border-t pt-2 mt-2">
+                <div><span className="font-semibold">On the Way:</span> {calcOnTheWay(viewedItem)}</div>
+                <div><span className="font-semibold">Missing CTN:</span> {calcMissing(viewedItem)}</div>
+                <div><span className="font-semibold">Remaining CTN at Nylam:</span> {calcRemaining(viewedItem)}</div>
+              </div>
+              <div><span className="font-semibold">Client:</span> {viewedItem.client}</div>
+              <div><span className="font-semibold">Follow Up:</span> {viewedItem.followUp ? '✓' : '—'}</div>
+              <div className="col-span-2"><span className="font-semibold">Remarks:</span> {viewedItem.remarks}</div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Import Dialog */}
+      <Dialog open={showImport} onOpenChange={setShowImport}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>Import Data</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div><label className="text-sm font-semibold">Upload file</label><Input type="file" accept=".csv,.tsv,.txt,.xlsx" onChange={(e) => { const f = e.target.files?.[0]; if (f) { const r = new FileReader(); r.onload = (ev) => setImportText(ev.target?.result as string); r.readAsText(f); } }} /></div>
+            <div><label className="text-sm font-semibold">Or paste data</label><textarea className="w-full border rounded p-2 h-32 text-sm" value={importText} onChange={e => setImportText(e.target.value)} /></div>
+            <Button className="w-full" onClick={handleImport}><FileSpreadsheet className="h-4 w-4 mr-1" />Import</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Master Edit Dialog */}
+      <Dialog open={showMasterEdit} onOpenChange={setShowMasterEdit}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Master Edit ({selected.length} items)</DialogTitle></DialogHeader>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="text-xs font-semibold">LOT No.</label><Input value={masterForm.lotNo} onChange={e => setMasterForm({ ...masterForm, lotNo: e.target.value })} /></div>
+            <div><label className="text-xs font-semibold">Dispatched from {label}</label><Input value={masterForm.dispatchedFrom} onChange={e => setMasterForm({ ...masterForm, dispatchedFrom: e.target.value })} /></div>
+            <div><label className="text-xs font-semibold">{label} Container</label><Input value={masterForm.container} onChange={e => setMasterForm({ ...masterForm, container: e.target.value })} /></div>
+            <div><label className="text-xs font-semibold">Dispatched Nylam→Kerung</label><Input value={masterForm.dispatchedNylamKerung} onChange={e => setMasterForm({ ...masterForm, dispatchedNylamKerung: e.target.value })} /></div>
+            <div><label className="text-xs font-semibold">Nylam Container for Kerung</label><Input value={masterForm.nylamContainerKerung} onChange={e => setMasterForm({ ...masterForm, nylamContainerKerung: e.target.value })} /></div>
+            <div><label className="text-xs font-semibold">Dispatched Nylam→Tatopani</label><Input value={masterForm.dispatchedNylamTatopani} onChange={e => setMasterForm({ ...masterForm, dispatchedNylamTatopani: e.target.value })} /></div>
+            <div><label className="text-xs font-semibold">Nylam Container for Tatopani</label><Input value={masterForm.nylamContainerTatopani} onChange={e => setMasterForm({ ...masterForm, nylamContainerTatopani: e.target.value })} /></div>
+          </div>
+          <Button className="w-full mt-3" onClick={handleMasterEdit}>Apply</Button>
+        </DialogContent>
+      </Dialog>
+
+      {/* TATOPANI Edit */}
+      <Dialog open={showTatopaniEdit} onOpenChange={setShowTatopaniEdit}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>TATOPANI Edit ({selected.length} items)</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div><label className="text-xs font-semibold">Dispatched from Nylam to Tatopani</label><Input value={tatopaniForm.dispatchedFromNylam} onChange={e => setTatopaniForm({ ...tatopaniForm, dispatchedFromNylam: e.target.value })} /></div>
+            <div><label className="text-xs font-semibold">Nylam Container for Tatopani</label><Input value={tatopaniForm.nylamContainer} onChange={e => setTatopaniForm({ ...tatopaniForm, nylamContainer: e.target.value })} /></div>
+            <div><label className="text-xs font-semibold">Status</label>
+              <Select value={tatopaniForm.status} onValueChange={v => setTatopaniForm({ ...tatopaniForm, status: v })}><SelectTrigger><SelectValue placeholder="Status" /></SelectTrigger><SelectContent>{TATOPANI_STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent></Select>
+            </div>
+            <div><label className="text-xs font-semibold">Arrival Date</label><Input type="date" value={tatopaniForm.arrivalDate} onChange={e => setTatopaniForm({ ...tatopaniForm, arrivalDate: e.target.value })} /></div>
+          </div>
+          <Button className="w-full mt-3" onClick={handleTatopaniEdit}>Apply</Button>
+        </DialogContent>
+      </Dialog>
+
+      {/* KERUNG Edit */}
+      <Dialog open={showKerungEdit} onOpenChange={setShowKerungEdit}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>KERUNG Edit ({selected.length} items)</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div><label className="text-xs font-semibold">Dispatched from Nylam to Kerung</label><Input value={kerungForm.dispatchedFromNylam} onChange={e => setKerungForm({ ...kerungForm, dispatchedFromNylam: e.target.value })} /></div>
+            <div><label className="text-xs font-semibold">Nylam Container for Kerung</label><Input value={kerungForm.nylamContainer} onChange={e => setKerungForm({ ...kerungForm, nylamContainer: e.target.value })} /></div>
+            <div><label className="text-xs font-semibold">Status</label>
+              <Select value={kerungForm.status} onValueChange={v => setKerungForm({ ...kerungForm, status: v })}><SelectTrigger><SelectValue placeholder="Status" /></SelectTrigger><SelectContent>{KERUNG_STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent></Select>
+            </div>
+            <div><label className="text-xs font-semibold">Arrival Date</label><Input type="date" value={kerungForm.arrivalDate} onChange={e => setKerungForm({ ...kerungForm, arrivalDate: e.target.value })} /></div>
+          </div>
+          <Button className="w-full mt-3" onClick={handleKerungEdit}>Apply</Button>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+};
