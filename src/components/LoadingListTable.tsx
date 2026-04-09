@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Search, Plus, Download, Upload, Eye, Trash2, Edit, ChevronDown, ChevronRight, FileSpreadsheet, Check } from 'lucide-react';
 import type { LoadingListItem, Destination, ConsignmentStatus, KerungDetails, TatopaniDetails } from '@/types';
 import { DESTINATIONS, STATUSES, TATOPANI_STATUSES, KERUNG_STATUSES, emptyKerung, emptyTatopani } from '@/types';
+import { getStatusColor, getDestinationRowClass } from '@/lib/statusColors';
 
 const genId = () => crypto.randomUUID();
 
@@ -31,7 +32,6 @@ export const LoadingListTable = ({ origin }: Props) => {
   const [showImport, setShowImport] = useState(false);
   const [importText, setImportText] = useState('');
 
-  // Container count for expandable rows
   const [kerungContainerCount, setKerungContainerCount] = useState<Record<string, number>>({});
   const [tatopaniContainerCount, setTatopaniContainerCount] = useState<Record<string, number>>({});
 
@@ -76,7 +76,6 @@ export const LoadingListTable = ({ origin }: Props) => {
   };
 
   const calcRemaining = (item: LoadingListItem) => {
-    // Only fill if loaded CTN from Nylam to Kerung or Tatopani is filled
     if (item.tatopani.loadedCtn === 0 && item.kerung.loadedCtn === 0) return '-';
     return item.totalCtns - item.tatopani.loadedCtn - item.kerung.loadedCtn;
   };
@@ -233,12 +232,13 @@ export const LoadingListTable = ({ origin }: Props) => {
     const details = item[type];
     const count = getContainerCount(item.id, type);
     const statuses = type === 'kerung' ? KERUNG_STATUSES : TATOPANI_STATUSES;
-    const typeLabel = type === 'kerung' ? 'Kerung' : 'Tatopani';
+    const typeLabel = type === 'kerung' ? 'KERUNG' : 'TATOPANI';
 
     return (
       <tr className="bg-accent/5">
         <td colSpan={22} className="p-3">
-          <div className="mb-2 flex items-center gap-2">
+          <div className="mb-3 flex items-center gap-3">
+            <span className="text-sm font-bold">{typeLabel}</span>
             <label className="text-xs font-semibold">Containers:</label>
             <Input
               className="h-7 w-16 text-xs"
@@ -248,48 +248,72 @@ export const LoadingListTable = ({ origin }: Props) => {
               onChange={e => setContainerCount(item.id, type, Math.max(1, Number(e.target.value)))}
             />
           </div>
-          {Array.from({ length: count }).map((_, rowIdx) => (
-            <div key={rowIdx} className="grid grid-cols-3 md:grid-cols-6 gap-2 text-xs mb-2 p-2 border rounded bg-background">
-              {rowIdx === 0 ? (
-                <>
-                  <div><label className="font-semibold block text-[10px]">Dispatched from Nylam</label><Input className="h-7 text-xs" value={details.dispatchedFromNylam} onChange={e => updateLoadingListItem(item.id, { [type]: { ...details, dispatchedFromNylam: e.target.value } })} /></div>
-                  <div><label className="font-semibold block text-[10px]">Loaded CTN</label><Input className="h-7 text-xs" type="number" value={details.loadedCtn} onChange={e => updateLoadingListItem(item.id, { [type]: { ...details, loadedCtn: Number(e.target.value) } })} /></div>
-                  <div><label className="font-semibold block text-[10px]">Nylam Container</label><Input className="h-7 text-xs" value={details.nylamContainer} onChange={e => updateLoadingListItem(item.id, { [type]: { ...details, nylamContainer: e.target.value } })} /></div>
-                  <div><label className="font-semibold block text-[10px]">Status</label>
-                    <Select value={details.status || '_none'} onValueChange={v => updateLoadingListItem(item.id, { [type]: { ...details, status: v === '_none' ? '' : v } })}>
-                      <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="Status" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="_none">— Select —</SelectItem>
-                        {statuses.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div><label className="font-semibold block text-[10px]">Received CTN</label><Input className="h-7 text-xs" type="number" value={details.receivedCtn} onChange={e => updateLoadingListItem(item.id, { [type]: { ...details, receivedCtn: Number(e.target.value) } })} /></div>
-                  <div><label className="font-semibold block text-[10px]">Arrival Date</label><Input className="h-7 text-xs" type="date" value={details.arrivalDate} onChange={e => updateLoadingListItem(item.id, { [type]: { ...details, arrivalDate: e.target.value } })} /></div>
-                </>
-              ) : (
-                <>
-                  <div><label className="font-semibold block text-[10px]">Dispatched (Row {rowIdx + 1})</label><Input className="h-7 text-xs" placeholder="—" /></div>
-                  <div><label className="font-semibold block text-[10px]">Loaded CTN</label><Input className="h-7 text-xs" type="number" placeholder="0" /></div>
-                  <div><label className="font-semibold block text-[10px]">Container</label><Input className="h-7 text-xs" placeholder="—" /></div>
-                  <div><label className="font-semibold block text-[10px]">Status</label>
-                    <Select defaultValue="_none">
-                      <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="Status" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="_none">— Select —</SelectItem>
-                        {statuses.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div><label className="font-semibold block text-[10px]">Received CTN</label><Input className="h-7 text-xs" type="number" placeholder="0" /></div>
-                  <div><label className="font-semibold block text-[10px]">Arrival Date</label><Input className="h-7 text-xs" type="date" /></div>
-                </>
-              )}
-            </div>
-          ))}
+          <div className="overflow-x-auto">
+            <table className="w-auto text-xs border-collapse">
+              <thead>
+                <tr className="bg-muted/50">
+                  <th className="px-2 py-1 text-left font-bold text-[11px] whitespace-nowrap">#</th>
+                  <th className="px-2 py-1 text-left font-bold text-[11px] whitespace-nowrap min-w-[90px]">Dispatched</th>
+                  <th className="px-2 py-1 text-left font-bold text-[11px] whitespace-nowrap min-w-[70px]">Loaded CTN</th>
+                  <th className="px-2 py-1 text-left font-bold text-[11px] whitespace-nowrap min-w-[90px]">Container</th>
+                  <th className="px-2 py-1 text-left font-bold text-[11px] whitespace-nowrap min-w-[110px]">Status</th>
+                  <th className="px-2 py-1 text-left font-bold text-[11px] whitespace-nowrap min-w-[70px]">Received CTN</th>
+                  <th className="px-2 py-1 text-left font-bold text-[11px] whitespace-nowrap min-w-[90px]">Arrival Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Array.from({ length: count }).map((_, rowIdx) => (
+                  <tr key={rowIdx} className="border-t border-border/50">
+                    <td className="px-2 py-1 text-muted-foreground font-medium">{rowIdx + 1}</td>
+                    {rowIdx === 0 ? (
+                      <>
+                        <td className="px-1 py-1"><Input className="h-7 text-xs w-[90px]" value={details.dispatchedFromNylam} onChange={e => updateLoadingListItem(item.id, { [type]: { ...details, dispatchedFromNylam: e.target.value } })} /></td>
+                        <td className="px-1 py-1"><Input className="h-7 text-xs w-[65px]" type="number" value={details.loadedCtn} onChange={e => updateLoadingListItem(item.id, { [type]: { ...details, loadedCtn: Number(e.target.value) } })} /></td>
+                        <td className="px-1 py-1"><Input className="h-7 text-xs w-[90px]" value={details.nylamContainer} onChange={e => updateLoadingListItem(item.id, { [type]: { ...details, nylamContainer: e.target.value } })} /></td>
+                        <td className="px-1 py-1">
+                          <Select value={details.status || '_none'} onValueChange={v => updateLoadingListItem(item.id, { [type]: { ...details, status: v === '_none' ? '' : v } })}>
+                            <SelectTrigger className="h-7 text-xs w-[110px]"><SelectValue placeholder="Status" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="_none">— Select —</SelectItem>
+                              {statuses.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </td>
+                        <td className="px-1 py-1"><Input className="h-7 text-xs w-[65px]" type="number" value={details.receivedCtn} onChange={e => updateLoadingListItem(item.id, { [type]: { ...details, receivedCtn: Number(e.target.value) } })} /></td>
+                        <td className="px-1 py-1"><Input className="h-7 text-xs w-[100px]" type="date" value={details.arrivalDate} onChange={e => updateLoadingListItem(item.id, { [type]: { ...details, arrivalDate: e.target.value } })} /></td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="px-1 py-1"><Input className="h-7 text-xs w-[90px]" placeholder="—" /></td>
+                        <td className="px-1 py-1"><Input className="h-7 text-xs w-[65px]" type="number" placeholder="0" /></td>
+                        <td className="px-1 py-1"><Input className="h-7 text-xs w-[90px]" placeholder="—" /></td>
+                        <td className="px-1 py-1">
+                          <Select defaultValue="_none">
+                            <SelectTrigger className="h-7 text-xs w-[110px]"><SelectValue placeholder="Status" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="_none">— Select —</SelectItem>
+                              {statuses.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </td>
+                        <td className="px-1 py-1"><Input className="h-7 text-xs w-[65px]" type="number" placeholder="0" /></td>
+                        <td className="px-1 py-1"><Input className="h-7 text-xs w-[100px]" type="date" /></td>
+                      </>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </td>
       </tr>
     );
+  };
+
+  const renderStatusBadge = (status: string) => {
+    if (!status) return <span className="text-muted-foreground">—</span>;
+    const colorClass = getStatusColor(status);
+    return <Badge variant="outline" className={`text-xs border ${colorClass}`}>{status}</Badge>;
   };
 
   return (
@@ -312,52 +336,53 @@ export const LoadingListTable = ({ origin }: Props) => {
       </div>
 
       <div className="table-container border rounded-lg">
-        <table className="w-full text-xs whitespace-nowrap">
+        <table className="w-full text-sm whitespace-nowrap">
           <thead className="bg-muted sticky top-0 z-20">
             <tr>
               <th className="p-2 w-8"><Checkbox checked={selected.length === filtered.length && filtered.length > 0} onCheckedChange={(c) => setSelected(c ? filtered.map(i => i.id) : [])} /></th>
-              <th className="p-2 text-left font-semibold sticky-col-left bg-muted" style={{ left: 32 }}>Consignment No.</th>
-              <th className="p-2 text-left font-semibold">Date</th>
-              <th className="p-2 text-left font-semibold">MARKA</th>
-              <th className="p-2 text-left font-semibold">Total CTNS</th>
-              <th className="p-2 text-left font-semibold">CBM</th>
-              <th className="p-2 text-left font-semibold">GW</th>
-              <th className="p-2 text-left font-semibold">Destination</th>
-              <th className="p-2 text-left font-semibold">LOT No.</th>
-              <th className="p-2 text-left font-semibold">Dispatched from {label}</th>
-              <th className="p-2 text-left font-semibold">{label} Container</th>
-              <th className="p-2 text-left font-semibold">Status</th>
-              <th className="p-2 text-left font-semibold">Arrival at Nylam</th>
-              <th className="p-2 text-left font-semibold cursor-pointer">KERUNG ▼</th>
-              <th className="p-2 text-left font-semibold cursor-pointer">TATOPANI ▼</th>
-              <th className="p-2 text-left font-semibold highlight-cell">On the Way</th>
-              <th className="p-2 text-left font-semibold highlight-cell">Missing CTN</th>
-              <th className="p-2 text-left font-semibold highlight-cell">Remaining CTN at Nylam</th>
-              <th className="p-2 text-left font-semibold">Client</th>
-              <th className="p-2 text-left font-semibold">Remarks</th>
-              <th className="p-2 text-left font-semibold">Follow Up</th>
-              <th className="p-2 text-left font-semibold sticky-col-right bg-muted">Actions</th>
+              <th className="p-2 text-left font-bold sticky-col-left bg-muted" style={{ left: 32 }}>Consignment No.</th>
+              <th className="p-2 text-left font-bold">Date</th>
+              <th className="p-2 text-left font-bold">MARKA</th>
+              <th className="p-2 text-left font-bold">Total CTNS</th>
+              <th className="p-2 text-left font-bold">CBM</th>
+              <th className="p-2 text-left font-bold">GW</th>
+              <th className="p-2 text-left font-bold">Destination</th>
+              <th className="p-2 text-left font-bold">LOT No.</th>
+              <th className="p-2 text-left font-bold">Dispatched from {label}</th>
+              <th className="p-2 text-left font-bold">{label} Container</th>
+              <th className="p-2 text-left font-bold">Status</th>
+              <th className="p-2 text-left font-bold">Arrival at Nylam</th>
+              <th className="p-2 text-left font-bold cursor-pointer">KERUNG ▼</th>
+              <th className="p-2 text-left font-bold cursor-pointer">TATOPANI ▼</th>
+              <th className="p-2 text-left font-bold highlight-cell">On the Way</th>
+              <th className="p-2 text-left font-bold highlight-cell">Missing CTN</th>
+              <th className="p-2 text-left font-bold highlight-cell">Remaining CTN at Nylam</th>
+              <th className="p-2 text-left font-bold">Client</th>
+              <th className="p-2 text-left font-bold">Remarks</th>
+              <th className="p-2 text-left font-bold">Follow Up</th>
+              <th className="p-2 text-left font-bold sticky-col-right bg-muted">Actions</th>
             </tr>
           </thead>
           <tbody>
             {filtered.map((item) => {
               const isKerungExpanded = expandedKerung.includes(item.id);
               const isTatopaniExpanded = expandedTatopani.includes(item.id);
+              const destRowClass = getDestinationRowClass(item.destination);
               return (
                 <>
-                  <tr key={item.id} className="border-t hover:bg-muted/50">
+                  <tr key={item.id} className={`border-t hover:bg-muted/50 ${destRowClass}`}>
                     <td className="p-2"><Checkbox checked={selected.includes(item.id)} onCheckedChange={() => toggleSelect(item.id)} /></td>
-                    <td className="p-2 font-medium sticky-col-left" style={{ left: 32 }}>{item.consignmentNo}</td>
+                    <td className="p-2 font-semibold sticky-col-left" style={{ left: 32 }}>{item.consignmentNo}</td>
                     <td className="p-2">{item.date}</td>
                     <td className="p-2">{item.marka}</td>
                     <td className="p-2">{item.totalCtns}</td>
                     <td className="p-2">{item.cbm}</td>
                     <td className="p-2">{item.gw}</td>
-                    <td className="p-2">{item.destination}</td>
+                    <td className="p-2 font-medium">{item.destination}</td>
                     <td className="p-2">{item.lotNo}</td>
                     <td className="p-2">{item.dispatchedFrom}</td>
                     <td className="p-2">{item.container}</td>
-                    <td className="p-2">{item.status ? <Badge variant="outline" className="text-xs">{item.status}</Badge> : <span className="text-muted-foreground">—</span>}</td>
+                    <td className="p-2">{renderStatusBadge(item.status)}</td>
                     <td className="p-2">{item.arrivalDateNylam}</td>
                     <td className="p-2">
                       <Button size="sm" variant="ghost" className="h-6 px-1 text-xs" onClick={() => setExpandedKerung(prev => prev.includes(item.id) ? prev.filter(x => x !== item.id) : [...prev, item.id])}>
@@ -402,34 +427,34 @@ export const LoadingListTable = ({ origin }: Props) => {
       {/* Add/Edit Dialog */}
       <Dialog open={showAdd} onOpenChange={setShowAdd}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>{editId ? 'Edit' : 'Add'} Loading List Item</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle className="font-bold text-lg">{editId ? 'Edit' : 'Add'} Loading List Item</DialogTitle></DialogHeader>
           <div className="grid grid-cols-3 gap-3">
-            <div><label className="text-xs font-semibold">Date</label><Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
-            <div><label className="text-xs font-semibold">Consignment No.</label><Input value={form.consignmentNo} onChange={e => setForm({ ...form, consignmentNo: e.target.value })} /></div>
-            <div><label className="text-xs font-semibold">MARKA</label><Input value={form.marka} onChange={e => setForm({ ...form, marka: e.target.value })} /></div>
-            <div><label className="text-xs font-semibold">Total CTNS</label><Input type="number" value={form.totalCtns} onChange={e => setForm({ ...form, totalCtns: Number(e.target.value) })} /></div>
-            <div><label className="text-xs font-semibold">CBM</label><Input type="number" step="0.01" value={form.cbm} onChange={e => setForm({ ...form, cbm: Number(e.target.value) })} /></div>
-            <div><label className="text-xs font-semibold">GW</label><Input type="number" step="0.01" value={form.gw} onChange={e => setForm({ ...form, gw: Number(e.target.value) })} /></div>
-            <div><label className="text-xs font-semibold">Destination</label>
+            <div><label className="text-xs font-bold">Date</label><Input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
+            <div><label className="text-xs font-bold">Consignment No.</label><Input value={form.consignmentNo} onChange={e => setForm({ ...form, consignmentNo: e.target.value })} /></div>
+            <div><label className="text-xs font-bold">MARKA</label><Input value={form.marka} onChange={e => setForm({ ...form, marka: e.target.value })} /></div>
+            <div><label className="text-xs font-bold">Total CTNS</label><Input type="number" value={form.totalCtns} onChange={e => setForm({ ...form, totalCtns: Number(e.target.value) })} /></div>
+            <div><label className="text-xs font-bold">CBM</label><Input type="number" step="0.01" value={form.cbm} onChange={e => setForm({ ...form, cbm: Number(e.target.value) })} /></div>
+            <div><label className="text-xs font-bold">GW</label><Input type="number" step="0.01" value={form.gw} onChange={e => setForm({ ...form, gw: Number(e.target.value) })} /></div>
+            <div><label className="text-xs font-bold">Destination</label>
               <Select value={form.destination} onValueChange={v => setForm({ ...form, destination: v as Destination })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{DESTINATIONS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}</SelectContent></Select>
             </div>
-            <div><label className="text-xs font-semibold">LOT No.</label><Input value={form.lotNo} onChange={e => setForm({ ...form, lotNo: e.target.value })} /></div>
-            <div><label className="text-xs font-semibold">Dispatched from {label}</label><Input value={form.dispatchedFrom} onChange={e => setForm({ ...form, dispatchedFrom: e.target.value })} /></div>
-            <div><label className="text-xs font-semibold">{label} Container</label><Input value={form.container} onChange={e => setForm({ ...form, container: e.target.value })} /></div>
-            <div><label className="text-xs font-semibold">Status</label>
+            <div><label className="text-xs font-bold">LOT No.</label><Input value={form.lotNo} onChange={e => setForm({ ...form, lotNo: e.target.value })} /></div>
+            <div><label className="text-xs font-bold">Dispatched from {label}</label><Input value={form.dispatchedFrom} onChange={e => setForm({ ...form, dispatchedFrom: e.target.value })} /></div>
+            <div><label className="text-xs font-bold">{label} Container</label><Input value={form.container} onChange={e => setForm({ ...form, container: e.target.value })} /></div>
+            <div><label className="text-xs font-bold">Status</label>
               <Select value={form.status || '_none'} onValueChange={v => setForm({ ...form, status: v === '_none' ? '' as any : v as ConsignmentStatus })}><SelectTrigger><SelectValue placeholder="Select status" /></SelectTrigger><SelectContent><SelectItem value="_none">— Select —</SelectItem>{STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent></Select>
             </div>
-            <div><label className="text-xs font-semibold">Client</label><Input value={form.client} onChange={e => setForm({ ...form, client: e.target.value })} /></div>
-            <div className="col-span-3"><label className="text-xs font-semibold">Remarks</label><Input value={form.remarks} onChange={e => setForm({ ...form, remarks: e.target.value })} /></div>
+            <div><label className="text-xs font-bold">Client</label><Input value={form.client} onChange={e => setForm({ ...form, client: e.target.value })} /></div>
+            <div className="col-span-3"><label className="text-xs font-bold">Remarks</label><Input value={form.remarks} onChange={e => setForm({ ...form, remarks: e.target.value })} /></div>
           </div>
           <Button className="mt-4 w-full" onClick={handleSave}>{editId ? 'Update' : 'Add'}</Button>
         </DialogContent>
       </Dialog>
 
-      {/* View Dialog - Attractive */}
+      {/* View Dialog */}
       <Dialog open={!!showView} onOpenChange={() => setShowView(null)}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Loading List Details</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle className="font-bold text-lg">Loading List Details</DialogTitle></DialogHeader>
           {viewedItem && (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
@@ -453,7 +478,7 @@ export const LoadingListTable = ({ origin }: Props) => {
                 </div>
                 <div className="p-3 rounded-lg bg-accent/10 border">
                   <span className="text-xs text-muted-foreground">Status</span>
-                  <p className="font-semibold">{viewedItem.status || '—'}</p>
+                  {renderStatusBadge(viewedItem.status)}
                 </div>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
@@ -474,26 +499,26 @@ export const LoadingListTable = ({ origin }: Props) => {
               {(viewedItem.kerung.dispatchedFromNylam || viewedItem.kerung.loadedCtn > 0) && (
                 <div className="border-t pt-2">
                   <h4 className="font-bold text-sm mb-2">KERUNG</h4>
-                  <div className="grid grid-cols-3 gap-2 text-xs">
-                    <div><span className="text-muted-foreground">Dispatched</span><p className="font-medium">{viewedItem.kerung.dispatchedFromNylam}</p></div>
-                    <div><span className="text-muted-foreground">Loaded CTN</span><p className="font-medium">{viewedItem.kerung.loadedCtn}</p></div>
-                    <div><span className="text-muted-foreground">Container</span><p className="font-medium">{viewedItem.kerung.nylamContainer}</p></div>
-                    <div><span className="text-muted-foreground">Status</span><p className="font-medium">{viewedItem.kerung.status || '—'}</p></div>
-                    <div><span className="text-muted-foreground">Received CTN</span><p className="font-medium">{viewedItem.kerung.receivedCtn}</p></div>
-                    <div><span className="text-muted-foreground">Arrival</span><p className="font-medium">{viewedItem.kerung.arrivalDate || '—'}</p></div>
+                  <div className="grid grid-cols-3 gap-2 text-sm">
+                    <div><span className="text-muted-foreground text-xs">Dispatched</span><p className="font-medium">{viewedItem.kerung.dispatchedFromNylam}</p></div>
+                    <div><span className="text-muted-foreground text-xs">Loaded CTN</span><p className="font-medium">{viewedItem.kerung.loadedCtn}</p></div>
+                    <div><span className="text-muted-foreground text-xs">Container</span><p className="font-medium">{viewedItem.kerung.nylamContainer}</p></div>
+                    <div><span className="text-muted-foreground text-xs">Status</span>{renderStatusBadge(viewedItem.kerung.status)}</div>
+                    <div><span className="text-muted-foreground text-xs">Received CTN</span><p className="font-medium">{viewedItem.kerung.receivedCtn}</p></div>
+                    <div><span className="text-muted-foreground text-xs">Arrival</span><p className="font-medium">{viewedItem.kerung.arrivalDate || '—'}</p></div>
                   </div>
                 </div>
               )}
               {(viewedItem.tatopani.dispatchedFromNylam || viewedItem.tatopani.loadedCtn > 0) && (
                 <div className="border-t pt-2">
                   <h4 className="font-bold text-sm mb-2">TATOPANI</h4>
-                  <div className="grid grid-cols-3 gap-2 text-xs">
-                    <div><span className="text-muted-foreground">Dispatched</span><p className="font-medium">{viewedItem.tatopani.dispatchedFromNylam}</p></div>
-                    <div><span className="text-muted-foreground">Loaded CTN</span><p className="font-medium">{viewedItem.tatopani.loadedCtn}</p></div>
-                    <div><span className="text-muted-foreground">Container</span><p className="font-medium">{viewedItem.tatopani.nylamContainer}</p></div>
-                    <div><span className="text-muted-foreground">Status</span><p className="font-medium">{viewedItem.tatopani.status || '—'}</p></div>
-                    <div><span className="text-muted-foreground">Received CTN</span><p className="font-medium">{viewedItem.tatopani.receivedCtn}</p></div>
-                    <div><span className="text-muted-foreground">Arrival</span><p className="font-medium">{viewedItem.tatopani.arrivalDate || '—'}</p></div>
+                  <div className="grid grid-cols-3 gap-2 text-sm">
+                    <div><span className="text-muted-foreground text-xs">Dispatched</span><p className="font-medium">{viewedItem.tatopani.dispatchedFromNylam}</p></div>
+                    <div><span className="text-muted-foreground text-xs">Loaded CTN</span><p className="font-medium">{viewedItem.tatopani.loadedCtn}</p></div>
+                    <div><span className="text-muted-foreground text-xs">Container</span><p className="font-medium">{viewedItem.tatopani.nylamContainer}</p></div>
+                    <div><span className="text-muted-foreground text-xs">Status</span>{renderStatusBadge(viewedItem.tatopani.status)}</div>
+                    <div><span className="text-muted-foreground text-xs">Received CTN</span><p className="font-medium">{viewedItem.tatopani.receivedCtn}</p></div>
+                    <div><span className="text-muted-foreground text-xs">Arrival</span><p className="font-medium">{viewedItem.tatopani.arrivalDate || '—'}</p></div>
                   </div>
                 </div>
               )}
@@ -509,10 +534,10 @@ export const LoadingListTable = ({ origin }: Props) => {
       {/* Import Dialog */}
       <Dialog open={showImport} onOpenChange={setShowImport}>
         <DialogContent className="max-w-lg">
-          <DialogHeader><DialogTitle>Import Data</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle className="font-bold">Import Data</DialogTitle></DialogHeader>
           <div className="space-y-3">
-            <div><label className="text-sm font-semibold">Upload file</label><Input type="file" accept=".csv,.tsv,.txt,.xlsx" onChange={(e) => { const f = e.target.files?.[0]; if (f) { const r = new FileReader(); r.onload = (ev) => setImportText(ev.target?.result as string); r.readAsText(f); } }} /></div>
-            <div><label className="text-sm font-semibold">Or paste data</label><textarea className="w-full border rounded p-2 h-32 text-sm" value={importText} onChange={e => setImportText(e.target.value)} /></div>
+            <div><label className="text-sm font-bold">Upload file</label><Input type="file" accept=".csv,.tsv,.txt,.xlsx" onChange={(e) => { const f = e.target.files?.[0]; if (f) { const r = new FileReader(); r.onload = (ev) => setImportText(ev.target?.result as string); r.readAsText(f); } }} /></div>
+            <div><label className="text-sm font-bold">Or paste data</label><textarea className="w-full border rounded p-2 h-32 text-sm" value={importText} onChange={e => setImportText(e.target.value)} /></div>
             <Button className="w-full" onClick={handleImport}><FileSpreadsheet className="h-4 w-4 mr-1" />Import</Button>
           </div>
         </DialogContent>
@@ -521,15 +546,15 @@ export const LoadingListTable = ({ origin }: Props) => {
       {/* Master Edit Dialog */}
       <Dialog open={showMasterEdit} onOpenChange={setShowMasterEdit}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Master Edit ({selected.length} items)</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle className="font-bold">Master Edit ({selected.length} items)</DialogTitle></DialogHeader>
           <div className="grid grid-cols-2 gap-3">
-            <div><label className="text-xs font-semibold">LOT No.</label><Input value={masterForm.lotNo} onChange={e => setMasterForm({ ...masterForm, lotNo: e.target.value })} /></div>
-            <div><label className="text-xs font-semibold">Dispatched from {label}</label><Input value={masterForm.dispatchedFrom} onChange={e => setMasterForm({ ...masterForm, dispatchedFrom: e.target.value })} /></div>
-            <div><label className="text-xs font-semibold">{label} Container</label><Input value={masterForm.container} onChange={e => setMasterForm({ ...masterForm, container: e.target.value })} /></div>
-            <div><label className="text-xs font-semibold">Dispatched Nylam→Kerung</label><Input value={masterForm.dispatchedNylamKerung} onChange={e => setMasterForm({ ...masterForm, dispatchedNylamKerung: e.target.value })} /></div>
-            <div><label className="text-xs font-semibold">Nylam Container for Kerung</label><Input value={masterForm.nylamContainerKerung} onChange={e => setMasterForm({ ...masterForm, nylamContainerKerung: e.target.value })} /></div>
-            <div><label className="text-xs font-semibold">Dispatched Nylam→Tatopani</label><Input value={masterForm.dispatchedNylamTatopani} onChange={e => setMasterForm({ ...masterForm, dispatchedNylamTatopani: e.target.value })} /></div>
-            <div><label className="text-xs font-semibold">Nylam Container for Tatopani</label><Input value={masterForm.nylamContainerTatopani} onChange={e => setMasterForm({ ...masterForm, nylamContainerTatopani: e.target.value })} /></div>
+            <div><label className="text-xs font-bold">LOT No.</label><Input value={masterForm.lotNo} onChange={e => setMasterForm({ ...masterForm, lotNo: e.target.value })} /></div>
+            <div><label className="text-xs font-bold">Dispatched from {label}</label><Input value={masterForm.dispatchedFrom} onChange={e => setMasterForm({ ...masterForm, dispatchedFrom: e.target.value })} /></div>
+            <div><label className="text-xs font-bold">{label} Container</label><Input value={masterForm.container} onChange={e => setMasterForm({ ...masterForm, container: e.target.value })} /></div>
+            <div><label className="text-xs font-bold">Dispatched Nylam→Kerung</label><Input value={masterForm.dispatchedNylamKerung} onChange={e => setMasterForm({ ...masterForm, dispatchedNylamKerung: e.target.value })} /></div>
+            <div><label className="text-xs font-bold">Nylam Container for Kerung</label><Input value={masterForm.nylamContainerKerung} onChange={e => setMasterForm({ ...masterForm, nylamContainerKerung: e.target.value })} /></div>
+            <div><label className="text-xs font-bold">Dispatched Nylam→Tatopani</label><Input value={masterForm.dispatchedNylamTatopani} onChange={e => setMasterForm({ ...masterForm, dispatchedNylamTatopani: e.target.value })} /></div>
+            <div><label className="text-xs font-bold">Nylam Container for Tatopani</label><Input value={masterForm.nylamContainerTatopani} onChange={e => setMasterForm({ ...masterForm, nylamContainerTatopani: e.target.value })} /></div>
           </div>
           <Button className="w-full mt-3" onClick={handleMasterEdit}>Apply</Button>
         </DialogContent>
@@ -538,14 +563,17 @@ export const LoadingListTable = ({ origin }: Props) => {
       {/* TATOPANI Edit */}
       <Dialog open={showTatopaniEdit} onOpenChange={setShowTatopaniEdit}>
         <DialogContent>
-          <DialogHeader><DialogTitle>TATOPANI Edit ({selected.length} items)</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle className="font-bold">TATOPANI Edit ({selected.length} items)</DialogTitle></DialogHeader>
           <div className="space-y-3">
-            <div><label className="text-xs font-semibold">Dispatched from Nylam to Tatopani</label><Input value={tatopaniForm.dispatchedFromNylam} onChange={e => setTatopaniForm({ ...tatopaniForm, dispatchedFromNylam: e.target.value })} /></div>
-            <div><label className="text-xs font-semibold">Nylam Container for Tatopani</label><Input value={tatopaniForm.nylamContainer} onChange={e => setTatopaniForm({ ...tatopaniForm, nylamContainer: e.target.value })} /></div>
-            <div><label className="text-xs font-semibold">Status</label>
-              <Select value={tatopaniForm.status} onValueChange={v => setTatopaniForm({ ...tatopaniForm, status: v })}><SelectTrigger><SelectValue placeholder="Status" /></SelectTrigger><SelectContent>{TATOPANI_STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent></Select>
+            <div><label className="text-xs font-bold">Dispatched from Nylam</label><Input value={tatopaniForm.dispatchedFromNylam} onChange={e => setTatopaniForm({ ...tatopaniForm, dispatchedFromNylam: e.target.value })} /></div>
+            <div><label className="text-xs font-bold">Nylam Container</label><Input value={tatopaniForm.nylamContainer} onChange={e => setTatopaniForm({ ...tatopaniForm, nylamContainer: e.target.value })} /></div>
+            <div><label className="text-xs font-bold">Status</label>
+              <Select value={tatopaniForm.status || '_none'} onValueChange={v => setTatopaniForm({ ...tatopaniForm, status: v === '_none' ? '' : v })}>
+                <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                <SelectContent><SelectItem value="_none">— Select —</SelectItem>{TATOPANI_STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+              </Select>
             </div>
-            <div><label className="text-xs font-semibold">Arrival Date</label><Input type="date" value={tatopaniForm.arrivalDate} onChange={e => setTatopaniForm({ ...tatopaniForm, arrivalDate: e.target.value })} /></div>
+            <div><label className="text-xs font-bold">Arrival Date</label><Input type="date" value={tatopaniForm.arrivalDate} onChange={e => setTatopaniForm({ ...tatopaniForm, arrivalDate: e.target.value })} /></div>
           </div>
           <Button className="w-full mt-3" onClick={handleTatopaniEdit}>Apply</Button>
         </DialogContent>
@@ -554,14 +582,17 @@ export const LoadingListTable = ({ origin }: Props) => {
       {/* KERUNG Edit */}
       <Dialog open={showKerungEdit} onOpenChange={setShowKerungEdit}>
         <DialogContent>
-          <DialogHeader><DialogTitle>KERUNG Edit ({selected.length} items)</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle className="font-bold">KERUNG Edit ({selected.length} items)</DialogTitle></DialogHeader>
           <div className="space-y-3">
-            <div><label className="text-xs font-semibold">Dispatched from Nylam to Kerung</label><Input value={kerungForm.dispatchedFromNylam} onChange={e => setKerungForm({ ...kerungForm, dispatchedFromNylam: e.target.value })} /></div>
-            <div><label className="text-xs font-semibold">Nylam Container for Kerung</label><Input value={kerungForm.nylamContainer} onChange={e => setKerungForm({ ...kerungForm, nylamContainer: e.target.value })} /></div>
-            <div><label className="text-xs font-semibold">Status</label>
-              <Select value={kerungForm.status} onValueChange={v => setKerungForm({ ...kerungForm, status: v })}><SelectTrigger><SelectValue placeholder="Status" /></SelectTrigger><SelectContent>{KERUNG_STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent></Select>
+            <div><label className="text-xs font-bold">Dispatched from Nylam</label><Input value={kerungForm.dispatchedFromNylam} onChange={e => setKerungForm({ ...kerungForm, dispatchedFromNylam: e.target.value })} /></div>
+            <div><label className="text-xs font-bold">Nylam Container</label><Input value={kerungForm.nylamContainer} onChange={e => setKerungForm({ ...kerungForm, nylamContainer: e.target.value })} /></div>
+            <div><label className="text-xs font-bold">Status</label>
+              <Select value={kerungForm.status || '_none'} onValueChange={v => setKerungForm({ ...kerungForm, status: v === '_none' ? '' : v })}>
+                <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                <SelectContent><SelectItem value="_none">— Select —</SelectItem>{KERUNG_STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+              </Select>
             </div>
-            <div><label className="text-xs font-semibold">Arrival Date</label><Input type="date" value={kerungForm.arrivalDate} onChange={e => setKerungForm({ ...kerungForm, arrivalDate: e.target.value })} /></div>
+            <div><label className="text-xs font-bold">Arrival Date</label><Input type="date" value={kerungForm.arrivalDate} onChange={e => setKerungForm({ ...kerungForm, arrivalDate: e.target.value })} /></div>
           </div>
           <Button className="w-full mt-3" onClick={handleKerungEdit}>Apply</Button>
         </DialogContent>
