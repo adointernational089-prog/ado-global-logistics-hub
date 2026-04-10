@@ -7,8 +7,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Search, Plus, Download, Upload, Eye, Trash2, Edit, ChevronDown, ChevronRight, FileSpreadsheet, Check } from 'lucide-react';
-import type { LoadingListItem, Destination, ConsignmentStatus, KerungDetails, TatopaniDetails } from '@/types';
-import { DESTINATIONS, STATUSES, TATOPANI_STATUSES, KERUNG_STATUSES, emptyKerung, emptyTatopani } from '@/types';
+import type { LoadingListItem, Destination, ConsignmentStatus, KerungDetails, TatopaniDetails, ContainerEntry } from '@/types';
+import { DESTINATIONS, STATUSES, TATOPANI_STATUSES, KERUNG_STATUSES, emptyKerung, emptyTatopani, emptyContainerEntry } from '@/types';
 import { getStatusColor, getDestinationRowClass } from '@/lib/statusColors';
 
 const genId = () => crypto.randomUUID();
@@ -31,9 +31,6 @@ export const LoadingListTable = ({ origin }: Props) => {
   const [showKerungEdit, setShowKerungEdit] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [importText, setImportText] = useState('');
-
-  const [kerungContainerCount, setKerungContainerCount] = useState<Record<string, number>>({});
-  const [tatopaniContainerCount, setTatopaniContainerCount] = useState<Record<string, number>>({});
 
   const label = origin === 'guangzhou' ? 'Guangzhou' : 'Yiwu';
   const items = useMemo(() => loadingList.filter(l => l.origin === origin), [loadingList, origin]);
@@ -61,23 +58,51 @@ export const LoadingListTable = ({ origin }: Props) => {
     client: '', remarks: '', followUp: false, origin,
   });
 
+  const getContainers = (item: LoadingListItem, type: 'kerung' | 'tatopani'): ContainerEntry[] => {
+    const details = item[type];
+    const ctrs = details.containers || [];
+    // If old format (no containers array), create one entry from the main fields
+    if (ctrs.length === 0 && (details.dispatchedFromNylam || details.loadedCtn > 0)) {
+      return [{
+        dispatchedFromNylam: details.dispatchedFromNylam,
+        loadedCtn: details.loadedCtn,
+        nylamContainer: details.nylamContainer,
+        status: details.status,
+        receivedCtn: details.receivedCtn,
+        arrivalDate: details.arrivalDate,
+      }];
+    }
+    return ctrs;
+  };
+
   const calcOnTheWay = (item: LoadingListItem) => {
     let count = 0;
-    if (item.tatopani.status === 'On the way to Tatopani') count += item.tatopani.loadedCtn;
-    if (item.kerung.status === 'On the way to Kerung') count += item.kerung.loadedCtn;
+    const kCtrs = getContainers(item, 'kerung');
+    const tCtrs = getContainers(item, 'tatopani');
+    kCtrs.forEach(c => { if (c.status === 'On the way to Kerung') count += c.loadedCtn; });
+    tCtrs.forEach(c => { if (c.status === 'On the way to Tatopani') count += c.loadedCtn; });
+    if (count === 0) {
+      if (item.tatopani.status === 'On the way to Tatopani') count += item.tatopani.loadedCtn;
+      if (item.kerung.status === 'On the way to Kerung') count += item.kerung.loadedCtn;
+    }
     return count;
   };
 
   const calcMissing = (item: LoadingListItem) => {
-    const tatRecv = item.tatopani.receivedCtn;
-    const kerRecv = item.kerung.receivedCtn;
-    if (tatRecv === 0 && kerRecv === 0) return 0;
-    return (item.tatopani.loadedCtn + item.kerung.loadedCtn) - tatRecv - kerRecv;
+    const kCtrs = getContainers(item, 'kerung');
+    const tCtrs = getContainers(item, 'tatopani');
+    const totalLoaded = kCtrs.reduce((s, c) => s + c.loadedCtn, 0) + tCtrs.reduce((s, c) => s + c.loadedCtn, 0);
+    const totalReceived = kCtrs.reduce((s, c) => s + c.receivedCtn, 0) + tCtrs.reduce((s, c) => s + c.receivedCtn, 0);
+    if (totalLoaded === 0) return 0;
+    return totalLoaded - totalReceived;
   };
 
   const calcRemaining = (item: LoadingListItem) => {
-    if (item.tatopani.loadedCtn === 0 && item.kerung.loadedCtn === 0) return '-';
-    return item.totalCtns - item.tatopani.loadedCtn - item.kerung.loadedCtn;
+    const kCtrs = getContainers(item, 'kerung');
+    const tCtrs = getContainers(item, 'tatopani');
+    const totalLoaded = kCtrs.reduce((s, c) => s + c.loadedCtn, 0) + tCtrs.reduce((s, c) => s + c.loadedCtn, 0);
+    if (totalLoaded === 0) return '-';
+    return item.totalCtns - totalLoaded;
   };
 
   const syncToConsignments = (item: LoadingListItem) => {
@@ -117,28 +142,19 @@ export const LoadingListTable = ({ origin }: Props) => {
     setShowAdd(true);
   };
 
+  const handleInlineUpdate = (id: string, field: string, value: string) => {
+    const updates: Partial<LoadingListItem> = { [field]: value };
+    updateLoadingListItem(id, updates);
+    const item = loadingList.find(l => l.id === id);
+    if (item) syncToConsignments({ ...item, ...updates });
+  };
+
   const handleMasterEdit = () => {
     selected.forEach(id => {
       const updates: Partial<LoadingListItem> = {};
       if (masterForm.lotNo) updates.lotNo = masterForm.lotNo;
       if (masterForm.dispatchedFrom) updates.dispatchedFrom = masterForm.dispatchedFrom;
       if (masterForm.container) updates.container = masterForm.container;
-      if (masterForm.dispatchedNylamKerung || masterForm.nylamContainerKerung) {
-        const item = loadingList.find(l => l.id === id);
-        if (item) {
-          updates.kerung = { ...item.kerung };
-          if (masterForm.dispatchedNylamKerung) updates.kerung.dispatchedFromNylam = masterForm.dispatchedNylamKerung;
-          if (masterForm.nylamContainerKerung) updates.kerung.nylamContainer = masterForm.nylamContainerKerung;
-        }
-      }
-      if (masterForm.dispatchedNylamTatopani || masterForm.nylamContainerTatopani) {
-        const item = loadingList.find(l => l.id === id);
-        if (item) {
-          updates.tatopani = { ...item.tatopani };
-          if (masterForm.dispatchedNylamTatopani) updates.tatopani.dispatchedFromNylam = masterForm.dispatchedNylamTatopani;
-          if (masterForm.nylamContainerTatopani) updates.tatopani.nylamContainer = masterForm.nylamContainerTatopani;
-        }
-      }
       updateLoadingListItem(id, updates);
     });
     setShowMasterEdit(false);
@@ -185,6 +201,116 @@ export const LoadingListTable = ({ origin }: Props) => {
     if (item) updateLoadingListItem(id, { followUp: !item.followUp });
   };
 
+  const updateContainerEntry = (itemId: string, type: 'kerung' | 'tatopani', index: number, field: keyof ContainerEntry, value: string | number) => {
+    const item = loadingList.find(l => l.id === itemId);
+    if (!item) return;
+    const details = { ...item[type] };
+    const ctrs = [...(details.containers || [])];
+    if (!ctrs[index]) ctrs[index] = emptyContainerEntry();
+    ctrs[index] = { ...ctrs[index], [field]: value };
+    details.containers = ctrs;
+    // Also update the main fields from first container for backward compat
+    if (index === 0) {
+      details.dispatchedFromNylam = ctrs[0].dispatchedFromNylam;
+      details.loadedCtn = ctrs[0].loadedCtn;
+      details.nylamContainer = ctrs[0].nylamContainer;
+      details.status = ctrs[0].status as any;
+      details.receivedCtn = ctrs[0].receivedCtn;
+      details.arrivalDate = ctrs[0].arrivalDate;
+    }
+    updateLoadingListItem(itemId, { [type]: details });
+  };
+
+  const setContainerCount = (itemId: string, type: 'kerung' | 'tatopani', count: number) => {
+    const item = loadingList.find(l => l.id === itemId);
+    if (!item) return;
+    const details = { ...item[type] };
+    const existing = details.containers || [];
+    const newCtrs: ContainerEntry[] = [];
+    for (let i = 0; i < count; i++) {
+      newCtrs.push(existing[i] || emptyContainerEntry());
+    }
+    details.containers = newCtrs;
+    if (newCtrs.length > 0) {
+      details.dispatchedFromNylam = newCtrs[0].dispatchedFromNylam;
+      details.loadedCtn = newCtrs[0].loadedCtn;
+      details.nylamContainer = newCtrs[0].nylamContainer;
+      details.status = newCtrs[0].status as any;
+      details.receivedCtn = newCtrs[0].receivedCtn;
+      details.arrivalDate = newCtrs[0].arrivalDate;
+    }
+    updateLoadingListItem(itemId, { [type]: details });
+  };
+
+  const renderExpandableFields = (item: LoadingListItem, type: 'kerung' | 'tatopani') => {
+    const details = item[type];
+    const ctrs = details.containers || [];
+    const count = ctrs.length || 1;
+    const statuses = type === 'kerung' ? KERUNG_STATUSES : TATOPANI_STATUSES;
+    const typeLabel = type === 'kerung' ? 'KERUNG' : 'TATOPANI';
+
+    return (
+      <tr className="bg-accent/5">
+        <td colSpan={20} className="p-3">
+          <div className="mb-3 flex items-center gap-3">
+            <span className="text-sm font-bold">{typeLabel}</span>
+            <label className="text-xs font-semibold">Containers:</label>
+            <Input
+              className="h-7 w-16 text-xs"
+              type="number"
+              min={1}
+              value={count}
+              onChange={e => setContainerCount(item.id, type, Math.max(1, Number(e.target.value)))}
+            />
+          </div>
+          {/* Vertical layout - each container as a card */}
+          <div className="space-y-3 max-w-xl">
+            {Array.from({ length: count }).map((_, idx) => {
+              const entry = ctrs[idx] || emptyContainerEntry();
+              return (
+                <div key={idx} className="border rounded-lg p-3 bg-background">
+                  <div className="text-xs font-bold mb-2 text-muted-foreground">Container {idx + 1}</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[11px] font-semibold text-muted-foreground">Dispatched</label>
+                      <Input className="h-7 text-xs" value={entry.dispatchedFromNylam} onChange={e => updateContainerEntry(item.id, type, idx, 'dispatchedFromNylam', e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-semibold text-muted-foreground">Loaded CTN</label>
+                      <Input className="h-7 text-xs" type="number" value={entry.loadedCtn} onChange={e => updateContainerEntry(item.id, type, idx, 'loadedCtn', Number(e.target.value))} />
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-semibold text-muted-foreground">Container</label>
+                      <Input className="h-7 text-xs" value={entry.nylamContainer} onChange={e => updateContainerEntry(item.id, type, idx, 'nylamContainer', e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-semibold text-muted-foreground">Status</label>
+                      <Select value={entry.status || '_none'} onValueChange={v => updateContainerEntry(item.id, type, idx, 'status', v === '_none' ? '' : v)}>
+                        <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="Status" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="_none">— Select —</SelectItem>
+                          {statuses.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-semibold text-muted-foreground">Received CTN</label>
+                      <Input className="h-7 text-xs" type="number" value={entry.receivedCtn} onChange={e => updateContainerEntry(item.id, type, idx, 'receivedCtn', Number(e.target.value))} />
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-semibold text-muted-foreground">Arrival Date</label>
+                      <Input className="h-7 text-xs" type="date" value={entry.arrivalDate} onChange={e => updateContainerEntry(item.id, type, idx, 'arrivalDate', e.target.value)} />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </td>
+      </tr>
+    );
+  };
+
   const handleImport = () => {
     if (!importText.trim()) return;
     const lines = importText.trim().split('\n');
@@ -218,98 +344,6 @@ export const LoadingListTable = ({ origin }: Props) => {
   const viewedItem = showView ? items.find(i => i.id === showView) : null;
   const toggleSelect = (id: string) => setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
 
-  const getContainerCount = (id: string, type: 'kerung' | 'tatopani') => {
-    const map = type === 'kerung' ? kerungContainerCount : tatopaniContainerCount;
-    return map[id] || 1;
-  };
-
-  const setContainerCount = (id: string, type: 'kerung' | 'tatopani', count: number) => {
-    if (type === 'kerung') setKerungContainerCount(prev => ({ ...prev, [id]: count }));
-    else setTatopaniContainerCount(prev => ({ ...prev, [id]: count }));
-  };
-
-  const renderExpandableFields = (item: LoadingListItem, type: 'kerung' | 'tatopani') => {
-    const details = item[type];
-    const count = getContainerCount(item.id, type);
-    const statuses = type === 'kerung' ? KERUNG_STATUSES : TATOPANI_STATUSES;
-    const typeLabel = type === 'kerung' ? 'KERUNG' : 'TATOPANI';
-
-    return (
-      <tr className="bg-accent/5">
-        <td colSpan={22} className="p-3">
-          <div className="mb-3 flex items-center gap-3">
-            <span className="text-sm font-bold">{typeLabel}</span>
-            <label className="text-xs font-semibold">Containers:</label>
-            <Input
-              className="h-7 w-16 text-xs"
-              type="number"
-              min={1}
-              value={count}
-              onChange={e => setContainerCount(item.id, type, Math.max(1, Number(e.target.value)))}
-            />
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-auto text-xs border-collapse">
-              <thead>
-                <tr className="bg-muted/50">
-                  <th className="px-2 py-1 text-left font-bold text-[11px] whitespace-nowrap">#</th>
-                  <th className="px-2 py-1 text-left font-bold text-[11px] whitespace-nowrap min-w-[90px]">Dispatched</th>
-                  <th className="px-2 py-1 text-left font-bold text-[11px] whitespace-nowrap min-w-[70px]">Loaded CTN</th>
-                  <th className="px-2 py-1 text-left font-bold text-[11px] whitespace-nowrap min-w-[90px]">Container</th>
-                  <th className="px-2 py-1 text-left font-bold text-[11px] whitespace-nowrap min-w-[110px]">Status</th>
-                  <th className="px-2 py-1 text-left font-bold text-[11px] whitespace-nowrap min-w-[70px]">Received CTN</th>
-                  <th className="px-2 py-1 text-left font-bold text-[11px] whitespace-nowrap min-w-[90px]">Arrival Date</th>
-                </tr>
-              </thead>
-              <tbody>
-                {Array.from({ length: count }).map((_, rowIdx) => (
-                  <tr key={rowIdx} className="border-t border-border/50">
-                    <td className="px-2 py-1 text-muted-foreground font-medium">{rowIdx + 1}</td>
-                    {rowIdx === 0 ? (
-                      <>
-                        <td className="px-1 py-1"><Input className="h-7 text-xs w-[90px]" value={details.dispatchedFromNylam} onChange={e => updateLoadingListItem(item.id, { [type]: { ...details, dispatchedFromNylam: e.target.value } })} /></td>
-                        <td className="px-1 py-1"><Input className="h-7 text-xs w-[65px]" type="number" value={details.loadedCtn} onChange={e => updateLoadingListItem(item.id, { [type]: { ...details, loadedCtn: Number(e.target.value) } })} /></td>
-                        <td className="px-1 py-1"><Input className="h-7 text-xs w-[90px]" value={details.nylamContainer} onChange={e => updateLoadingListItem(item.id, { [type]: { ...details, nylamContainer: e.target.value } })} /></td>
-                        <td className="px-1 py-1">
-                          <Select value={details.status || '_none'} onValueChange={v => updateLoadingListItem(item.id, { [type]: { ...details, status: v === '_none' ? '' : v } })}>
-                            <SelectTrigger className="h-7 text-xs w-[110px]"><SelectValue placeholder="Status" /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="_none">— Select —</SelectItem>
-                              {statuses.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                            </SelectContent>
-                          </Select>
-                        </td>
-                        <td className="px-1 py-1"><Input className="h-7 text-xs w-[65px]" type="number" value={details.receivedCtn} onChange={e => updateLoadingListItem(item.id, { [type]: { ...details, receivedCtn: Number(e.target.value) } })} /></td>
-                        <td className="px-1 py-1"><Input className="h-7 text-xs w-[100px]" type="date" value={details.arrivalDate} onChange={e => updateLoadingListItem(item.id, { [type]: { ...details, arrivalDate: e.target.value } })} /></td>
-                      </>
-                    ) : (
-                      <>
-                        <td className="px-1 py-1"><Input className="h-7 text-xs w-[90px]" placeholder="—" /></td>
-                        <td className="px-1 py-1"><Input className="h-7 text-xs w-[65px]" type="number" placeholder="0" /></td>
-                        <td className="px-1 py-1"><Input className="h-7 text-xs w-[90px]" placeholder="—" /></td>
-                        <td className="px-1 py-1">
-                          <Select defaultValue="_none">
-                            <SelectTrigger className="h-7 text-xs w-[110px]"><SelectValue placeholder="Status" /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="_none">— Select —</SelectItem>
-                              {statuses.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                            </SelectContent>
-                          </Select>
-                        </td>
-                        <td className="px-1 py-1"><Input className="h-7 text-xs w-[65px]" type="number" placeholder="0" /></td>
-                        <td className="px-1 py-1"><Input className="h-7 text-xs w-[100px]" type="date" /></td>
-                      </>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </td>
-      </tr>
-    );
-  };
-
   const renderStatusBadge = (status: string) => {
     if (!status) return <span className="text-muted-foreground">—</span>;
     const colorClass = getStatusColor(status);
@@ -340,7 +374,7 @@ export const LoadingListTable = ({ origin }: Props) => {
           <thead className="bg-muted sticky top-0 z-20">
             <tr>
               <th className="p-2 w-8"><Checkbox checked={selected.length === filtered.length && filtered.length > 0} onCheckedChange={(c) => setSelected(c ? filtered.map(i => i.id) : [])} /></th>
-              <th className="p-2 text-left font-bold sticky-col-left bg-muted" style={{ left: 32 }}>Consignment No.</th>
+              <th className="p-2 text-left font-bold">Consignment No.</th>
               <th className="p-2 text-left font-bold">Date</th>
               <th className="p-2 text-left font-bold">MARKA</th>
               <th className="p-2 text-left font-bold">Total CTNS</th>
@@ -352,15 +386,15 @@ export const LoadingListTable = ({ origin }: Props) => {
               <th className="p-2 text-left font-bold">{label} Container</th>
               <th className="p-2 text-left font-bold">Status</th>
               <th className="p-2 text-left font-bold">Arrival at Nylam</th>
-              <th className="p-2 text-left font-bold cursor-pointer">KERUNG ▼</th>
-              <th className="p-2 text-left font-bold cursor-pointer">TATOPANI ▼</th>
+              <th className="p-2 text-left font-bold">KERUNG ▼</th>
+              <th className="p-2 text-left font-bold">TATOPANI ▼</th>
               <th className="p-2 text-left font-bold highlight-cell">On the Way</th>
               <th className="p-2 text-left font-bold highlight-cell">Missing CTN</th>
               <th className="p-2 text-left font-bold highlight-cell">Remaining CTN at Nylam</th>
               <th className="p-2 text-left font-bold">Client</th>
               <th className="p-2 text-left font-bold">Remarks</th>
               <th className="p-2 text-left font-bold">Follow Up</th>
-              <th className="p-2 text-left font-bold sticky-col-right bg-muted">Actions</th>
+              <th className="p-2 text-left font-bold">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -372,7 +406,7 @@ export const LoadingListTable = ({ origin }: Props) => {
                 <>
                   <tr key={item.id} className={`border-t hover:bg-muted/50 ${destRowClass}`}>
                     <td className="p-2"><Checkbox checked={selected.includes(item.id)} onCheckedChange={() => toggleSelect(item.id)} /></td>
-                    <td className="p-2 font-semibold sticky-col-left" style={{ left: 32 }}>{item.consignmentNo}</td>
+                    <td className="p-2 font-semibold">{item.consignmentNo}</td>
                     <td className="p-2">{item.date}</td>
                     <td className="p-2">{item.marka}</td>
                     <td className="p-2">{item.totalCtns}</td>
@@ -380,10 +414,28 @@ export const LoadingListTable = ({ origin }: Props) => {
                     <td className="p-2">{item.gw}</td>
                     <td className="p-2 font-medium">{item.destination}</td>
                     <td className="p-2">{item.lotNo}</td>
-                    <td className="p-2">{item.dispatchedFrom}</td>
-                    <td className="p-2">{item.container}</td>
-                    <td className="p-2">{renderStatusBadge(item.status)}</td>
-                    <td className="p-2">{item.arrivalDateNylam}</td>
+                    {/* Inline editable: Dispatched from */}
+                    <td className="p-2">
+                      <Input className="h-7 text-xs w-24 border-dashed" value={item.dispatchedFrom} onChange={e => handleInlineUpdate(item.id, 'dispatchedFrom', e.target.value)} />
+                    </td>
+                    {/* Inline editable: Container */}
+                    <td className="p-2">
+                      <Input className="h-7 text-xs w-24 border-dashed" value={item.container} onChange={e => handleInlineUpdate(item.id, 'container', e.target.value)} />
+                    </td>
+                    {/* Inline editable: Status */}
+                    <td className="p-2">
+                      <Select value={item.status || '_none'} onValueChange={v => handleInlineUpdate(item.id, 'status', v === '_none' ? '' : v)}>
+                        <SelectTrigger className="h-7 text-xs w-36 border-dashed"><SelectValue placeholder="Status" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="_none">— Select —</SelectItem>
+                          {STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </td>
+                    {/* Inline editable: Arrival at Nylam */}
+                    <td className="p-2">
+                      <Input className="h-7 text-xs w-28 border-dashed" type="date" value={item.arrivalDateNylam} onChange={e => handleInlineUpdate(item.id, 'arrivalDateNylam', e.target.value)} />
+                    </td>
                     <td className="p-2">
                       <Button size="sm" variant="ghost" className="h-6 px-1 text-xs" onClick={() => setExpandedKerung(prev => prev.includes(item.id) ? prev.filter(x => x !== item.id) : [...prev, item.id])}>
                         {isKerungExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
@@ -406,7 +458,7 @@ export const LoadingListTable = ({ origin }: Props) => {
                         {item.followUp ? <Check className="h-4 w-4 text-success mx-auto" /> : <span className="text-muted-foreground">—</span>}
                       </div>
                     </td>
-                    <td className="p-2 sticky-col-right flex gap-1">
+                    <td className="p-2 flex gap-1">
                       <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setShowView(item.id)}><Eye className="h-3 w-3" /></Button>
                       <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => handleEdit(item)}><Edit className="h-3 w-3" /></Button>
                       <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => deleteLoadingListItem(item.id)}><Trash2 className="h-3 w-3 text-destructive" /></Button>
@@ -439,11 +491,6 @@ export const LoadingListTable = ({ origin }: Props) => {
               <Select value={form.destination} onValueChange={v => setForm({ ...form, destination: v as Destination })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{DESTINATIONS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}</SelectContent></Select>
             </div>
             <div><label className="text-xs font-bold">LOT No.</label><Input value={form.lotNo} onChange={e => setForm({ ...form, lotNo: e.target.value })} /></div>
-            <div><label className="text-xs font-bold">Dispatched from {label}</label><Input value={form.dispatchedFrom} onChange={e => setForm({ ...form, dispatchedFrom: e.target.value })} /></div>
-            <div><label className="text-xs font-bold">{label} Container</label><Input value={form.container} onChange={e => setForm({ ...form, container: e.target.value })} /></div>
-            <div><label className="text-xs font-bold">Status</label>
-              <Select value={form.status || '_none'} onValueChange={v => setForm({ ...form, status: v === '_none' ? '' as any : v as ConsignmentStatus })}><SelectTrigger><SelectValue placeholder="Select status" /></SelectTrigger><SelectContent><SelectItem value="_none">— Select —</SelectItem>{STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent></Select>
-            </div>
             <div><label className="text-xs font-bold">Client</label><Input value={form.client} onChange={e => setForm({ ...form, client: e.target.value })} /></div>
             <div className="col-span-3"><label className="text-xs font-bold">Remarks</label><Input value={form.remarks} onChange={e => setForm({ ...form, remarks: e.target.value })} /></div>
           </div>
@@ -486,46 +533,10 @@ export const LoadingListTable = ({ origin }: Props) => {
                 <div><span className="text-muted-foreground text-xs block">CBM</span><span className="font-medium">{viewedItem.cbm}</span></div>
                 <div><span className="text-muted-foreground text-xs block">GW</span><span className="font-medium">{viewedItem.gw}</span></div>
                 <div><span className="text-muted-foreground text-xs block">Destination</span><span className="font-medium">{viewedItem.destination}</span></div>
-                <div><span className="text-muted-foreground text-xs block">LOT No.</span><span className="font-medium">{viewedItem.lotNo || '—'}</span></div>
-                <div><span className="text-muted-foreground text-xs block">Dispatched from {label}</span><span className="font-medium">{viewedItem.dispatchedFrom || '—'}</span></div>
-                <div><span className="text-muted-foreground text-xs block">{label} Container</span><span className="font-medium">{viewedItem.container || '—'}</span></div>
-                <div><span className="text-muted-foreground text-xs block">Arrival at Nylam</span><span className="font-medium">{viewedItem.arrivalDateNylam || '—'}</span></div>
               </div>
-              <div className="border-t pt-3 grid grid-cols-3 gap-3">
-                <div className="p-2 rounded bg-accent/10 text-center"><span className="text-xs text-muted-foreground block">On the Way</span><span className="font-bold">{calcOnTheWay(viewedItem) || '-'}</span></div>
-                <div className="p-2 rounded bg-destructive/10 text-center"><span className="text-xs text-muted-foreground block">Missing CTN</span><span className="font-bold">{calcMissing(viewedItem) || '-'}</span></div>
-                <div className="p-2 rounded bg-[hsl(var(--highlight))] text-center"><span className="text-xs opacity-70 block">Remaining at Nylam</span><span className="font-bold">{calcRemaining(viewedItem)}</span></div>
-              </div>
-              {(viewedItem.kerung.dispatchedFromNylam || viewedItem.kerung.loadedCtn > 0) && (
-                <div className="border-t pt-2">
-                  <h4 className="font-bold text-sm mb-2">KERUNG</h4>
-                  <div className="grid grid-cols-3 gap-2 text-sm">
-                    <div><span className="text-muted-foreground text-xs">Dispatched</span><p className="font-medium">{viewedItem.kerung.dispatchedFromNylam}</p></div>
-                    <div><span className="text-muted-foreground text-xs">Loaded CTN</span><p className="font-medium">{viewedItem.kerung.loadedCtn}</p></div>
-                    <div><span className="text-muted-foreground text-xs">Container</span><p className="font-medium">{viewedItem.kerung.nylamContainer}</p></div>
-                    <div><span className="text-muted-foreground text-xs">Status</span>{renderStatusBadge(viewedItem.kerung.status)}</div>
-                    <div><span className="text-muted-foreground text-xs">Received CTN</span><p className="font-medium">{viewedItem.kerung.receivedCtn}</p></div>
-                    <div><span className="text-muted-foreground text-xs">Arrival</span><p className="font-medium">{viewedItem.kerung.arrivalDate || '—'}</p></div>
-                  </div>
-                </div>
+              {viewedItem.remarks && (
+                <div className="text-sm"><span className="text-muted-foreground text-xs block">Remarks</span><span>{viewedItem.remarks}</span></div>
               )}
-              {(viewedItem.tatopani.dispatchedFromNylam || viewedItem.tatopani.loadedCtn > 0) && (
-                <div className="border-t pt-2">
-                  <h4 className="font-bold text-sm mb-2">TATOPANI</h4>
-                  <div className="grid grid-cols-3 gap-2 text-sm">
-                    <div><span className="text-muted-foreground text-xs">Dispatched</span><p className="font-medium">{viewedItem.tatopani.dispatchedFromNylam}</p></div>
-                    <div><span className="text-muted-foreground text-xs">Loaded CTN</span><p className="font-medium">{viewedItem.tatopani.loadedCtn}</p></div>
-                    <div><span className="text-muted-foreground text-xs">Container</span><p className="font-medium">{viewedItem.tatopani.nylamContainer}</p></div>
-                    <div><span className="text-muted-foreground text-xs">Status</span>{renderStatusBadge(viewedItem.tatopani.status)}</div>
-                    <div><span className="text-muted-foreground text-xs">Received CTN</span><p className="font-medium">{viewedItem.tatopani.receivedCtn}</p></div>
-                    <div><span className="text-muted-foreground text-xs">Arrival</span><p className="font-medium">{viewedItem.tatopani.arrivalDate || '—'}</p></div>
-                  </div>
-                </div>
-              )}
-              <div className="text-sm">
-                <span className="text-muted-foreground text-xs block">Remarks</span><span>{viewedItem.remarks || '—'}</span>
-              </div>
-              <div className="text-sm"><span className="text-muted-foreground text-xs block">Follow Up</span><span>{viewedItem.followUp ? '✓ Done' : '—'}</span></div>
             </div>
           )}
         </DialogContent>
@@ -551,10 +562,6 @@ export const LoadingListTable = ({ origin }: Props) => {
             <div><label className="text-xs font-bold">LOT No.</label><Input value={masterForm.lotNo} onChange={e => setMasterForm({ ...masterForm, lotNo: e.target.value })} /></div>
             <div><label className="text-xs font-bold">Dispatched from {label}</label><Input value={masterForm.dispatchedFrom} onChange={e => setMasterForm({ ...masterForm, dispatchedFrom: e.target.value })} /></div>
             <div><label className="text-xs font-bold">{label} Container</label><Input value={masterForm.container} onChange={e => setMasterForm({ ...masterForm, container: e.target.value })} /></div>
-            <div><label className="text-xs font-bold">Dispatched Nylam→Kerung</label><Input value={masterForm.dispatchedNylamKerung} onChange={e => setMasterForm({ ...masterForm, dispatchedNylamKerung: e.target.value })} /></div>
-            <div><label className="text-xs font-bold">Nylam Container for Kerung</label><Input value={masterForm.nylamContainerKerung} onChange={e => setMasterForm({ ...masterForm, nylamContainerKerung: e.target.value })} /></div>
-            <div><label className="text-xs font-bold">Dispatched Nylam→Tatopani</label><Input value={masterForm.dispatchedNylamTatopani} onChange={e => setMasterForm({ ...masterForm, dispatchedNylamTatopani: e.target.value })} /></div>
-            <div><label className="text-xs font-bold">Nylam Container for Tatopani</label><Input value={masterForm.nylamContainerTatopani} onChange={e => setMasterForm({ ...masterForm, nylamContainerTatopani: e.target.value })} /></div>
           </div>
           <Button className="w-full mt-3" onClick={handleMasterEdit}>Apply</Button>
         </DialogContent>

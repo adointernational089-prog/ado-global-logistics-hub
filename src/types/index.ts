@@ -13,6 +13,35 @@ export type ConsignmentStatus =
 export type TatopaniStatus = 'On the way to Tatopani' | 'At Tatopani port';
 export type KerungStatus = 'On the way to Kerung' | 'At Kerung port';
 
+export interface ContainerEntry {
+  dispatchedFromNylam: string;
+  loadedCtn: number;
+  nylamContainer: string;
+  status: string;
+  receivedCtn: number;
+  arrivalDate: string;
+}
+
+export interface KerungDetails {
+  dispatchedFromNylam: string;
+  loadedCtn: number;
+  nylamContainer: string;
+  status: KerungStatus | '';
+  receivedCtn: number;
+  arrivalDate: string;
+  containers?: ContainerEntry[];
+}
+
+export interface TatopaniDetails {
+  dispatchedFromNylam: string;
+  loadedCtn: number;
+  nylamContainer: string;
+  status: TatopaniStatus | '';
+  receivedCtn: number;
+  arrivalDate: string;
+  containers?: ContainerEntry[];
+}
+
 export interface Consignment {
   id: string;
   date: string;
@@ -25,24 +54,6 @@ export interface Consignment {
   status: ConsignmentStatus | '';
   client: string;
   remarks: string;
-}
-
-export interface KerungDetails {
-  dispatchedFromNylam: string;
-  loadedCtn: number;
-  nylamContainer: string;
-  status: KerungStatus | '';
-  receivedCtn: number;
-  arrivalDate: string;
-}
-
-export interface TatopaniDetails {
-  dispatchedFromNylam: string;
-  loadedCtn: number;
-  nylamContainer: string;
-  status: TatopaniStatus | '';
-  receivedCtn: number;
-  arrivalDate: string;
 }
 
 export interface LoadingListItem {
@@ -120,10 +131,14 @@ export const STATUSES: ConsignmentStatus[] = [
 export const TATOPANI_STATUSES: TatopaniStatus[] = ['On the way to Tatopani', 'At Tatopani port'];
 export const KERUNG_STATUSES: KerungStatus[] = ['On the way to Kerung', 'At Kerung port'];
 
-export const emptyKerung = (): KerungDetails => ({
+export const emptyContainerEntry = (): ContainerEntry => ({
   dispatchedFromNylam: '', loadedCtn: 0, nylamContainer: '', status: '', receivedCtn: 0, arrivalDate: ''
 });
 
+export const emptyKerung = (): KerungDetails => ({
+  dispatchedFromNylam: '', loadedCtn: 0, nylamContainer: '', status: '', receivedCtn: 0, arrivalDate: '', containers: []
+});
+
 export const emptyTatopani = (): TatopaniDetails => ({
-  dispatchedFromNylam: '', loadedCtn: 0, nylamContainer: '', status: '', receivedCtn: 0, arrivalDate: ''
+  dispatchedFromNylam: '', loadedCtn: 0, nylamContainer: '', status: '', receivedCtn: 0, arrivalDate: '', containers: []
 });
