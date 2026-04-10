@@ -1,15 +1,15 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useStore } from '@/store/useStore';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Search, Users, Package, Eye } from 'lucide-react';
+import { Search, Users, Package, Eye, TrendingUp, MapPin, Box } from 'lucide-react';
 import { getStatusColor, getDestinationRowClass } from '@/lib/statusColors';
 
 const Dashboard = () => {
-  const { consignments, loadingList } = useStore();
+  const { consignments, loadingList, containers, remainingCtns } = useStore();
   const [search, setSearch] = useState('');
   const [selectedClient, setSelectedClient] = useState<string | null>(null);
   const [viewConsignment, setViewConsignment] = useState<string | null>(null);
@@ -19,13 +19,10 @@ const Dashboard = () => {
     ...loadingList.map(l => l.client),
   ])).filter(Boolean);
 
-  // Search across client name, consignment no, and marka
   const filteredClients = search
     ? (() => {
         const s = search.toLowerCase();
-        // Find clients matching name
         const nameMatches = allClients.filter(c => c.toLowerCase().includes(s));
-        // Find clients with matching consignment no or marka
         const consignmentMatches = consignments
           .filter(c => c.consignmentNo.toLowerCase().includes(s) || c.marka.toLowerCase().includes(s))
           .map(c => c.client)
@@ -38,7 +35,6 @@ const Dashboard = () => {
       })()
     : allClients;
 
-  // When a client is selected, also filter consignments by search if searching by consignment/marka
   const clientConsignments = selectedClient
     ? consignments.filter(c => c.client === selectedClient)
     : [];
@@ -51,6 +47,12 @@ const Dashboard = () => {
     ? loadingList.find(l => l.consignmentNo === viewedConsignment?.consignmentNo)
     : null;
 
+  // Summary stats
+  const totalConsignments = consignments.length;
+  const totalContainers = containers.length;
+  const totalClients = allClients.length;
+  const activeShipments = consignments.filter(c => c.status && !c.status.includes('port')).length;
+
   const renderStatusBadge = (status: string) => {
     if (!status) return <span className="text-muted-foreground">—</span>;
     const colorClass = getStatusColor(status);
@@ -60,6 +62,54 @@ const Dashboard = () => {
   return (
     <div className="p-6">
       <h1 className="page-header">Dashboard</h1>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <Card className="border-l-4 border-l-blue-500">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground font-semibold uppercase">Total Consignments</p>
+                <p className="text-2xl font-bold">{totalConsignments}</p>
+              </div>
+              <Package className="h-8 w-8 text-blue-500 opacity-50" />
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-l-4 border-l-green-500">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground font-semibold uppercase">Clients</p>
+                <p className="text-2xl font-bold">{totalClients}</p>
+              </div>
+              <Users className="h-8 w-8 text-green-500 opacity-50" />
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-l-4 border-l-orange-500">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground font-semibold uppercase">Active Shipments</p>
+                <p className="text-2xl font-bold">{activeShipments}</p>
+              </div>
+              <TrendingUp className="h-8 w-8 text-orange-500 opacity-50" />
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-l-4 border-l-purple-500">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground font-semibold uppercase">Containers</p>
+                <p className="text-2xl font-bold">{totalContainers}</p>
+              </div>
+              <Box className="h-8 w-8 text-purple-500 opacity-50" />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
       {!selectedClient ? (
         <>
@@ -80,7 +130,9 @@ const Dashboard = () => {
               <p className="text-muted-foreground col-span-full text-center py-12">No clients found. Add consignments to see clients here.</p>
             ) : (
               filteredClients.map((client) => {
-                const count = consignments.filter(c => c.client === client).length;
+                const clientCons = consignments.filter(c => c.client === client);
+                const count = clientCons.length;
+                const latestStatus = clientCons[clientCons.length - 1]?.status || '';
                 return (
                   <Card
                     key={client}
@@ -92,10 +144,11 @@ const Dashboard = () => {
                       <CardTitle className="text-lg font-bold">{client}</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 mb-1">
                         <Package className="h-4 w-4 text-muted-foreground" />
                         <span className="text-sm text-muted-foreground">{count} consignment{count !== 1 ? 's' : ''}</span>
                       </div>
+                      {latestStatus && <div className="mt-1">{renderStatusBadge(latestStatus)}</div>}
                     </CardContent>
                   </Card>
                 );
@@ -122,7 +175,7 @@ const Dashboard = () => {
                   <th className="text-left p-3 font-bold">GW</th>
                   <th className="text-left p-3 font-bold">Destination</th>
                   <th className="text-left p-3 font-bold">Status</th>
-                  <th className="text-left p-3 font-bold sticky-col-right">Actions</th>
+                  <th className="text-left p-3 font-bold">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -138,7 +191,7 @@ const Dashboard = () => {
                       <td className="p-3">{c.gw}</td>
                       <td className="p-3 font-medium">{c.destination}</td>
                       <td className="p-3">{renderStatusBadge(c.status)}</td>
-                      <td className="p-3 sticky-col-right">
+                      <td className="p-3">
                         <Button size="sm" variant="ghost" onClick={() => setViewConsignment(c.id)}>
                           <Eye className="h-4 w-4" />
                         </Button>
@@ -193,43 +246,15 @@ const Dashboard = () => {
                 <div className="text-sm"><span className="text-muted-foreground text-xs block">Remarks</span><span>{viewedConsignment.remarks}</span></div>
               )}
               {viewedLoadingItem && (
-                <>
-                  <div className="border-t pt-4 space-y-3">
-                    <h3 className="font-bold text-base">Loading List Details</h3>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-                      <div><span className="text-muted-foreground text-xs block">LOT No.</span><span className="font-medium">{viewedLoadingItem.lotNo || '—'}</span></div>
-                      <div><span className="text-muted-foreground text-xs block">Container</span><span className="font-medium">{viewedLoadingItem.container || '—'}</span></div>
-                      <div><span className="text-muted-foreground text-xs block">Dispatched From</span><span className="font-medium">{viewedLoadingItem.dispatchedFrom || '—'}</span></div>
-                      <div><span className="text-muted-foreground text-xs block">Arrival at Nylam</span><span className="font-medium">{viewedLoadingItem.arrivalDateNylam || '—'}</span></div>
-                    </div>
+                <div className="border-t pt-4 space-y-3">
+                  <h3 className="font-bold text-base">Loading List Details</h3>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                    <div><span className="text-muted-foreground text-xs block">LOT No.</span><span className="font-medium">{viewedLoadingItem.lotNo || '—'}</span></div>
+                    <div><span className="text-muted-foreground text-xs block">Container</span><span className="font-medium">{viewedLoadingItem.container || '—'}</span></div>
+                    <div><span className="text-muted-foreground text-xs block">Dispatched From</span><span className="font-medium">{viewedLoadingItem.dispatchedFrom || '—'}</span></div>
+                    <div><span className="text-muted-foreground text-xs block">Arrival at Nylam</span><span className="font-medium">{viewedLoadingItem.arrivalDateNylam || '—'}</span></div>
                   </div>
-                  {(viewedLoadingItem.kerung.dispatchedFromNylam || viewedLoadingItem.kerung.loadedCtn > 0) && (
-                    <div className="border-t pt-3">
-                      <h4 className="font-bold text-sm mb-2">KERUNG</h4>
-                      <div className="grid grid-cols-3 gap-3 text-sm">
-                        <div><span className="text-muted-foreground text-xs">Dispatched</span><p className="font-medium">{viewedLoadingItem.kerung.dispatchedFromNylam}</p></div>
-                        <div><span className="text-muted-foreground text-xs">Loaded CTN</span><p className="font-medium">{viewedLoadingItem.kerung.loadedCtn}</p></div>
-                        <div><span className="text-muted-foreground text-xs">Container</span><p className="font-medium">{viewedLoadingItem.kerung.nylamContainer}</p></div>
-                        <div><span className="text-muted-foreground text-xs">Status</span>{renderStatusBadge(viewedLoadingItem.kerung.status)}</div>
-                        <div><span className="text-muted-foreground text-xs">Received CTN</span><p className="font-medium">{viewedLoadingItem.kerung.receivedCtn}</p></div>
-                        <div><span className="text-muted-foreground text-xs">Arrival</span><p className="font-medium">{viewedLoadingItem.kerung.arrivalDate || '—'}</p></div>
-                      </div>
-                    </div>
-                  )}
-                  {(viewedLoadingItem.tatopani.dispatchedFromNylam || viewedLoadingItem.tatopani.loadedCtn > 0) && (
-                    <div className="border-t pt-3">
-                      <h4 className="font-bold text-sm mb-2">TATOPANI</h4>
-                      <div className="grid grid-cols-3 gap-3 text-sm">
-                        <div><span className="text-muted-foreground text-xs">Dispatched</span><p className="font-medium">{viewedLoadingItem.tatopani.dispatchedFromNylam}</p></div>
-                        <div><span className="text-muted-foreground text-xs">Loaded CTN</span><p className="font-medium">{viewedLoadingItem.tatopani.loadedCtn}</p></div>
-                        <div><span className="text-muted-foreground text-xs">Container</span><p className="font-medium">{viewedLoadingItem.tatopani.nylamContainer}</p></div>
-                        <div><span className="text-muted-foreground text-xs">Status</span>{renderStatusBadge(viewedLoadingItem.tatopani.status)}</div>
-                        <div><span className="text-muted-foreground text-xs">Received CTN</span><p className="font-medium">{viewedLoadingItem.tatopani.receivedCtn}</p></div>
-                        <div><span className="text-muted-foreground text-xs">Arrival</span><p className="font-medium">{viewedLoadingItem.tatopani.arrivalDate || '—'}</p></div>
-                      </div>
-                    </div>
-                  )}
-                </>
+                </div>
               )}
             </div>
           )}
