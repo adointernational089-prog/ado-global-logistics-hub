@@ -29,27 +29,45 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      const u = session?.user ?? null;
-      setUser(u);
-      if (u) {
-        await fetchRole(u.id);
-      } else {
+    const init = async () => {
+      // Force login every time app is opened - clear any existing session
+      const hasLoggedInThisSession = sessionStorage.getItem('authenticated');
+      if (!hasLoggedInThisSession) {
+        await supabase.auth.signOut();
+        setUser(null);
         setRole(null);
+        setLoading(false);
       }
-      setLoading(false);
-    });
 
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      const u = session?.user ?? null;
-      setUser(u);
-      if (u) {
-        await fetchRole(u.id);
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+        const u = session?.user ?? null;
+        setUser(u);
+        if (u) {
+          sessionStorage.setItem('authenticated', 'true');
+          await fetchRole(u.id);
+        } else {
+          setRole(null);
+          sessionStorage.removeItem('authenticated');
+        }
+        setLoading(false);
+      });
+
+      if (hasLoggedInThisSession) {
+        const { data: { session } } = await supabase.auth.getSession();
+        const u = session?.user ?? null;
+        setUser(u);
+        if (u) {
+          await fetchRole(u.id);
+        }
+        setLoading(false);
       }
-      setLoading(false);
-    });
 
-    return () => subscription.unsubscribe();
+      return () => subscription.unsubscribe();
+    };
+
+    let cleanup: (() => void) | undefined;
+    init().then(c => { cleanup = c; });
+    return () => { cleanup?.(); };
   }, []);
 
   const signIn = async (email: string, password: string) => {
