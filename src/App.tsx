@@ -23,6 +23,7 @@ const queryClient = new QueryClient();
 
 const ProtectedRoutes = () => {
   const { user, role, loading } = useAuth();
+  useRealtimeSync();
 
   if (loading) {
     return (
